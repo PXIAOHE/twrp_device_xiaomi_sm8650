@@ -12,6 +12,10 @@ vendor.gatekeeper.is_security_level_spu=0
 # Reset allocatable space
 ro.dynamic.full_size=13421772800
 
+# Display: YARP v10 parity (twrpminui reads this to set up SDE_SPR_INIT_CFG;
+# without it the panel scans out with B/R swapped -> blue shows as pink)
+vendor.display.enable_spr=1
+
 # USB
 vendor.usb.configfs=1
 vendor.usb.rps_mask=0

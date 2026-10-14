@@ -134,9 +134,6 @@ jobs:
         git clone --depth=1 https://github.com/TWRP-Test/android_external_libvpx external/libvpx
         git clone --depth=1 https://github.com/TWRP-Test/android_external_libwebm external/libwebm
         echo "lvgl: $(git -C external/lvgl log --oneline -1)"
-        echo "--- applying manet pixel-order patch to GUI2 (experimental) ---"
-        python3 -c "p='bootable/recovery/twrpminui/graphics.cpp';s=open(p).read();old='raw_bgrx_to_rgbx(src + sy * row_bytes, destination, width);';new='memcpy(destination, src + sy * row_bytes, static_cast<size_t>(width) * 4); /* manet: native order */';assert s.count(old)==1, 'pixel patch pattern count=%d' % s.count(old);open(p,'w').write(s.replace(old,new));print('pixel-order patch applied')"
-        grep -n "manet: native" bootable/recovery/twrpminui/graphics.cpp | head -3
         echo "libvpx: $(git -C external/libvpx log --oneline -1)"
         echo "libwebm: $(git -C external/libwebm log --oneline -1)"
 
@@ -190,6 +187,14 @@ jobs:
           echo "zh_CN string OK"
         else
           echo "::error::zh_CN.xml missing switch_slot_confirm"
+          exit 1
+        fi
+        echo "--- SPR color-order prop check ---"
+        if grep -q "vendor.display.enable_spr=1" "$ROOT/prop.default"; then
+          echo "enable_spr prop OK"
+        else
+          echo "::error::prop.default missing vendor.display.enable_spr=1"
+          grep -n "enable_spr" "$ROOT/prop.default" || true
           exit 1
         fi
         echo "--- recovery binary GUI2 markers ---"
