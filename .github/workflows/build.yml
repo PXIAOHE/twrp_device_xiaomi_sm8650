@@ -122,6 +122,21 @@ jobs:
         mkdir -p "$(dirname "$DEVICE_DIR")"
         git clone $DEVICE_TREE_URL -b $DEVICE_TREE_BRANCH "$DEVICE_DIR"
 
+    - name: Fetch GUI2 (LVGL) sources
+      run: |
+        set -e
+        echo "--- replacing bootable/recovery with the GUI2 (LVGL) branch ---"
+        rm -rf bootable/recovery
+        git clone --depth=1 -b lvgl https://github.com/lingqiqi5211/android_bootable_recovery bootable/recovery
+        echo "recovery: $(git -C bootable/recovery log --oneline -1)"
+        echo "--- adding GUI2 dependency projects ---"
+        git clone --depth=1 https://github.com/TWRP-Test/android_external_lvgl external/lvgl
+        git clone --depth=1 https://github.com/TWRP-Test/android_external_libvpx external/libvpx
+        git clone --depth=1 https://github.com/TWRP-Test/android_external_libwebm external/libwebm
+        echo "lvgl: $(git -C external/lvgl log --oneline -1)"
+        echo "libvpx: $(git -C external/libvpx log --oneline -1)"
+        echo "libwebm: $(git -C external/libwebm log --oneline -1)"
+
     - name: Generate build info
       run: |
         echo -e "$BUILD_INFO" >> INFO.txt
@@ -147,6 +162,8 @@ jobs:
         export CCACHE_MAXSIZE=5G
         export USE_CCACHE=1
         lunch twrp_$LUNCH_TARGET
+        # GUI2 dev docs: a final recoveryimage must be preceded by installclean
+        m installclean
         (while true; do echo `date +%T` "Building TWRP..."; free -h; sleep 10; done) &
         TIP_PID=$!
         m ${BUILD_PARTITION}image
@@ -171,6 +188,14 @@ jobs:
         else
           echo "::error::zh_CN.xml missing switch_slot_confirm"
           exit 1
+        fi
+        echo "--- recovery binary GUI2 markers ---"
+        BIN="$ROOT/system/bin/recovery"
+        if [ -f "$BIN" ]; then
+          echo "lvgl-related strings: $(strings "$BIN" 2>/dev/null | grep -c -i -e lvgl -e 'gui2_' || true)"
+          strings "$BIN" 2>/dev/null | grep -o "gui2_[a-z_]*" | sort -u | head -12 || true
+        else
+          echo "recovery binary not found at $BIN"
         fi
 
     - name: Publish logs to ci-logs branch
