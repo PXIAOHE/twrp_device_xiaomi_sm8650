@@ -153,6 +153,26 @@ jobs:
         mv out/target/product/$DEVICE_NAME/${BUILD_PARTITION}.img out/target/product/$DEVICE_NAME/TWRP-3.7.1-16-$DEVICE_NAME-$BUILD_DATE.img
         kill $TIP_PID && exit 0
 
+    - name: Verify theme overlay
+      run: |
+        ROOT="out/target/product/$DEVICE_NAME/recovery/root"
+        echo "--- theme overlay check ---"
+        GOT="$(md5sum "$ROOT/twres/portrait.xml" 2>/dev/null | cut -d' ' -f1)"
+        EXPECT="9ecfc7ca2c1079f14b17b5edad421176"
+        if [ "$GOT" = "$EXPECT" ]; then
+          echo "THEME OVERLAY OK ($GOT)"
+        else
+          echo "::error::THEME OVERLAY FAILED: portrait.xml md5=$GOT expected=$EXPECT (device-tree twres did not win)"
+          ls -la "$ROOT/twres/" 2>/dev/null || true
+          exit 1
+        fi
+        if grep -q "switch_slot_confirm" "$ROOT/twres/languages/zh_CN.xml"; then
+          echo "zh_CN string OK"
+        else
+          echo "::error::zh_CN.xml missing switch_slot_confirm"
+          exit 1
+        fi
+
     - name: Publish logs to ci-logs branch
       if: failure()
       run: |
