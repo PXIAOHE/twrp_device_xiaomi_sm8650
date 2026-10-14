@@ -14,7 +14,7 @@ Manual trigger: Actions → **TWRP 16 Builder** → *Run workflow*. Defaults are
 | --- | --- |
 | TWRP manifest | `TWRP-Test/platform_manifest_twrp_aosp` @ `twrp-16.0` |
 | Device tree | this repo @ `main` |
-| Device path | `xiaomi/sm8650` |
+| Device path | `xiaomi/manet` |
 | Device name | `manet` |
 
 Output: `TWRP-3.7.1-16-manet-<date>.img` — a **ramdisk-only** recovery image

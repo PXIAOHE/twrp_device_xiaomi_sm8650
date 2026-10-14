@@ -22,7 +22,7 @@ on:
       DEVICE_PATH:
         description: "Device path device/"
         required: true
-        default: "xiaomi/sm8650"
+        default: "xiaomi/manet"
       DEVICE_NAME:
         description: "Device name"
         required: true
@@ -49,7 +49,7 @@ env:
   TWRP_MANIFEST_BRANCH: ${{ github.event.inputs.TWRP_MANIFEST_BRANCH || 'twrp-16.0' }}
   DEVICE_TREE_URL: ${{ github.event.inputs.DEVICE_TREE_URL || 'https://github.com/PXIAOHE/twrp_device_xiaomi_sm8650' }}
   DEVICE_TREE_BRANCH: ${{ github.event.inputs.DEVICE_TREE_BRANCH || 'main' }}
-  DEVICE_PATH: ${{ github.event.inputs.DEVICE_PATH || 'xiaomi/sm8650' }}
+  DEVICE_PATH: ${{ github.event.inputs.DEVICE_PATH || 'xiaomi/manet' }}
   DEVICE_NAME: ${{ github.event.inputs.DEVICE_NAME || 'manet' }}
   LUNCH_TARGET: ${{ github.event.inputs.LUNCH_TARGET || github.event.inputs.DEVICE_NAME || 'manet' }}
   BUILD_PARTITION: ${{ github.event.inputs.BUILD_PARTITION || 'recovery' }}
@@ -138,6 +138,8 @@ jobs:
 
     - name: Build TWRP
       run: |
+        mkdir -p /tmp/ci-logs
+        exec > >(stdbuf -oL tee /tmp/ci-logs/build.log) 2>&1
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
         export CCACHE_DIR=.ccache
@@ -150,6 +152,27 @@ jobs:
         m ${BUILD_PARTITION}image
         mv out/target/product/$DEVICE_NAME/${BUILD_PARTITION}.img out/target/product/$DEVICE_NAME/TWRP-3.7.1-16-$DEVICE_NAME-$BUILD_DATE.img
         kill $TIP_PID && exit 0
+
+    - name: Publish logs to ci-logs branch
+      if: failure()
+      run: |
+        sleep 1
+        cd device/$DEVICE_PATH
+        git config user.name "ci-logs"
+        git config user.email "ci-logs@users.noreply.github.com"
+        git checkout --orphan ci-logs
+        git reset
+        mkdir -p .ci-logs
+        if [ -s /tmp/ci-logs/build.log ]; then
+          cp /tmp/ci-logs/build.log .ci-logs/build.log
+        else
+          echo "no build log captured" > .ci-logs/build.log
+        fi
+        printf 'run_id: %s\nrun_url: https://github.com/%s/actions/runs/%s\nattempt: %s\n' \
+          "${{ github.run_id }}" "${{ github.repository }}" "${{ github.run_id }}" "${{ github.run_attempt }}" > .ci-logs/run-info.txt
+        git add -f .ci-logs
+        git commit -m "ci-logs: run ${{ github.run_id }} attempt ${{ github.run_attempt }}"
+        git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-logs:ci-logs
 
     - name: Upload to Release
       uses: softprops/action-gh-release@v2
