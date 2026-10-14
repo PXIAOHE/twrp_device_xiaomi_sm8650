@@ -1,2 +1,12 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Keep binaries as-is (no text normalization)
+*.ko binary
+*.so binary
+*.bin binary
+*.tflite binary
+*.img binary
+*.wmfw binary
+*.dtb binary
+*.dtbo binary

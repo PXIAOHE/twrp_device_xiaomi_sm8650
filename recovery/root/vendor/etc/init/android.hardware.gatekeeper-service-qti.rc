@@ -5,5 +5,6 @@ service vendor.gatekeeper_default /vendor/bin/hw/android.hardware.gatekeeper-ser
     class early_hal
     user root
     group root
-    setenv LD_LIBRARY_PATH /vendor/lib64:/vendor/lib64/hw:/system/lib64:/sbin:/odm/lib64
+    disabled
+    setenv LD_LIBRARY_PATH /vendor/lib64:/vendor/lib64/hw:/system/lib64:/sbin
     seclabel u:r:recovery:s0

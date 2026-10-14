@@ -36,7 +36,7 @@ on:
         required: true
         default: "recovery"
   push:
-    branches: [ main ]
+    branches: [ main, 'device-*' ]
     paths-ignore:
       - "**.md"
 
@@ -60,6 +60,17 @@ jobs:
     permissions:
       contents: write
     steps:
+    - name: Resolve device from branch
+      run: |
+        BRANCH="${GITHUB_REF_NAME}"
+        if [[ "$BRANCH" == device-* ]]; then
+          DEV="${BRANCH#device-}"
+          echo "DEVICE_NAME=$DEV" >> "$GITHUB_ENV"
+          echo "DEVICE_PATH=xiaomi/$DEV" >> "$GITHUB_ENV"
+          echo "LUNCH_TARGET=$DEV" >> "$GITHUB_ENV"
+          echo "DEVICE_TREE_BRANCH=$BRANCH" >> "$GITHUB_ENV"
+          echo "device resolved from branch: $DEV"
+        fi
     - name: Show build info
       run: |
         {

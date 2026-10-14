@@ -5,4 +5,7 @@
 #
 
 PRODUCT_MAKEFILES := \
-    $(LOCAL_DIR)/twrp_manet.mk
+    $(LOCAL_DIR)/twrp_zorn.mk
+
+COMMON_LUNCH_CHOICES := \
+    twrp_zorn-eng

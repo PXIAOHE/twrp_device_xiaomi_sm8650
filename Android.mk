@@ -6,6 +6,6 @@
 
 LOCAL_PATH := $(call my-dir)
 
-ifeq ($(TARGET_DEVICE),manet)
+ifeq ($(TARGET_DEVICE),zorn)
 include $(call all-subdir-makefiles,$(LOCAL_PATH))
 endif

@@ -12,6 +12,7 @@ include $(CLEAR_VARS)
     LOCAL_MODULE_CLASS := ETC
     LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)
     LOCAL_POST_INSTALL_CMD += \
-        mkdir -p $(TARGET_RECOVERY_ROOT_OUT)/lib/firmware; \
-        cp -rf $(LOCAL_PATH)/lib/firmware/* $(TARGET_RECOVERY_ROOT_OUT)/lib/firmware/;
+        mkdir -p $(TARGET_RECOVERY_ROOT_OUT)/lib/firmware $(TARGET_RECOVERY_ROOT_OUT)/vendor/firmware; \
+        cp -rf $(LOCAL_PATH)/lib/firmware/* $(TARGET_RECOVERY_ROOT_OUT)/lib/firmware/; \
+        cp -rf $(LOCAL_PATH)/lib/firmware/* $(TARGET_RECOVERY_ROOT_OUT)/vendor/firmware/;
 include $(BUILD_PHONY_PACKAGE)
