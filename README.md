@@ -7,7 +7,8 @@ TWRP 16 device tree for the Redmi K70 Pro (`manet`), assembled from:
 
 ## Build (GitHub Actions)
 
-Actions → **TWRP 16 Builder** → *Run workflow*. Defaults are pre-set for this repo:
+Builds run **automatically on every push to `main`** (docs-only changes are skipped).
+Manual trigger: Actions → **TWRP 16 Builder** → *Run workflow*. Defaults are pre-set for this repo:
 
 | Input | Default |
 | --- | --- |

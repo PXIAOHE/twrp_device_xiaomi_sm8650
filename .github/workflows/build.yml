@@ -35,6 +35,24 @@ on:
         description: "Build partition"
         required: true
         default: "recovery"
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - "**.md"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TWRP_MANIFEST_URL: ${{ github.event.inputs.TWRP_MANIFEST_URL || 'https://github.com/TWRP-Test/platform_manifest_twrp_aosp' }}
+  TWRP_MANIFEST_BRANCH: ${{ github.event.inputs.TWRP_MANIFEST_BRANCH || 'twrp-16.0' }}
+  DEVICE_TREE_URL: ${{ github.event.inputs.DEVICE_TREE_URL || 'https://github.com/PXIAOHE/twrp_device_xiaomi_sm8650' }}
+  DEVICE_TREE_BRANCH: ${{ github.event.inputs.DEVICE_TREE_BRANCH || 'main' }}
+  DEVICE_PATH: ${{ github.event.inputs.DEVICE_PATH || 'xiaomi/sm8650' }}
+  DEVICE_NAME: ${{ github.event.inputs.DEVICE_NAME || 'manet' }}
+  LUNCH_TARGET: ${{ github.event.inputs.LUNCH_TARGET || github.event.inputs.DEVICE_NAME || 'manet' }}
+  BUILD_PARTITION: ${{ github.event.inputs.BUILD_PARTITION || 'recovery' }}
 
 jobs:
   build:
@@ -44,28 +62,23 @@ jobs:
     steps:
     - name: Show build info
       run: |
-        if [ -n "${{ github.event.inputs.LUNCH_TARGET }}" ]; then
-          echo "LUNCH_TARGET=${{ github.event.inputs.LUNCH_TARGET }}" >> "$GITHUB_ENV"
-        else
-          echo "LUNCH_TARGET=${{ github.event.inputs.DEVICE_NAME }}" >> "$GITHUB_ENV"
-        fi
         {
           echo 'BUILD_INFO<<EOF'
           echo
-          echo Manifest url: ${{ github.event.inputs.TWRP_MANIFEST_URL }}
-          echo Manifest branch: ${{ github.event.inputs.TWRP_MANIFEST_BRANCH }}
-          echo Device tree url: ${{ github.event.inputs.DEVICE_TREE_URL }}
-          echo Device tree branch: ${{ github.event.inputs.DEVICE_TREE_BRANCH }}
-          echo Device path: ${{ github.event.inputs.DEVICE_PATH }}
-          echo Device name: ${{ github.event.inputs.DEVICE_NAME }}
-          echo Lunch target: ${{ github.event.inputs.LUNCH_TARGET }}
-          echo Build target: ${{ github.event.inputs.BUILD_PARTITION }}.img
+          echo Manifest url: $TWRP_MANIFEST_URL
+          echo Manifest branch: $TWRP_MANIFEST_BRANCH
+          echo Device tree url: $DEVICE_TREE_URL
+          echo Device tree branch: $DEVICE_TREE_BRANCH
+          echo Device path: $DEVICE_PATH
+          echo Device name: $DEVICE_NAME
+          echo Lunch target: $LUNCH_TARGET
+          echo Build target: $BUILD_PARTITION.img
           echo Build date: `date`
           echo
           echo EOF
         } >> "$GITHUB_ENV"
         echo BUILD_DATE=`date +%F` >> "$GITHUB_ENV"
-        echo "REPO_NAME=$(basename ${{ github.event.inputs.TWRP_MANIFEST_URL }})" >> "$GITHUB_ENV"
+        echo "REPO_NAME=$(basename $TWRP_MANIFEST_URL)" >> "$GITHUB_ENV"
 
     - name: Cleanup
       uses: rokibhasansagar/slimhub_actions@main
@@ -97,7 +110,7 @@ jobs:
 
     - name: Sync source
       run: |
-        repo init -u ${{ github.event.inputs.TWRP_MANIFEST_URL }} -b ${{ github.event.inputs.TWRP_MANIFEST_BRANCH }} --depth=1
+        repo init -u $TWRP_MANIFEST_URL -b $TWRP_MANIFEST_BRANCH --depth=1
         (while true; do echo "Syncing source..."; sleep 60; done) &
         TIP_PID=$!
         repo sync
@@ -105,7 +118,9 @@ jobs:
 
     - name: Setup device
       run: |
-        git clone ${{ github.event.inputs.DEVICE_TREE_URL }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} device/${{ github.event.inputs.DEVICE_PATH }}
+        DEVICE_DIR="device/$DEVICE_PATH"
+        mkdir -p "$(dirname "$DEVICE_DIR")"
+        git clone $DEVICE_TREE_URL -b $DEVICE_TREE_BRANCH "$DEVICE_DIR"
 
     - name: Generate build info
       run: |
@@ -119,30 +134,30 @@ jobs:
           git log --pretty=format:"- %h-%an: %s" >> INFO.txt
         fi
         cat INFO.txt
-      working-directory: device/${{ github.event.inputs.DEVICE_PATH }}
+      working-directory: device/${{ env.DEVICE_PATH }}
 
     - name: Build TWRP
       run: |
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
         export CCACHE_DIR=.ccache
-        export CCACHE_EXEC=$(command -v ccache)        
+        export CCACHE_EXEC=$(command -v ccache)
         export CCACHE_MAXSIZE=5G
         export USE_CCACHE=1
-        lunch twrp_${{ env.LUNCH_TARGET }}
+        lunch twrp_$LUNCH_TARGET
         (while true; do echo `date +%T` "Building TWRP..."; free -h; sleep 10; done) &
         TIP_PID=$!
-        m ${{ github.event.inputs.BUILD_PARTITION }}image
-        mv out/target/product/${{ github.event.inputs.DEVICE_NAME }}/${{ github.event.inputs.BUILD_PARTITION }}.img out/target/product/${{ github.event.inputs.DEVICE_NAME }}/TWRP-3.7.1-16-${{ github.event.inputs.DEVICE_NAME }}-${{ env.BUILD_DATE }}.img
-        kill $TIP_PID && exit 0        
+        m ${BUILD_PARTITION}image
+        mv out/target/product/$DEVICE_NAME/${BUILD_PARTITION}.img out/target/product/$DEVICE_NAME/TWRP-3.7.1-16-$DEVICE_NAME-$BUILD_DATE.img
+        kill $TIP_PID && exit 0
 
     - name: Upload to Release
       uses: softprops/action-gh-release@v2
       with:
-        files: | 
-          out/target/product/${{ github.event.inputs.DEVICE_NAME }}/TWRP-3.7.1-16-${{ github.event.inputs.DEVICE_NAME }}-${{ env.BUILD_DATE }}.img
-        name: TWRP-3.7.1-16-${{ github.event.inputs.DEVICE_NAME }}-${{ env.BUILD_DATE }}-${{ github.run_id }}
+        files: |
+          out/target/product/${{ env.DEVICE_NAME }}/TWRP-3.7.1-16-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}.img
+        name: TWRP-3.7.1-16-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}-${{ github.run_id }}
         tag_name: ${{ env.BUILD_DATE }}-${{ github.run_id }}
-        body_path: device/${{ github.event.inputs.DEVICE_PATH }}/INFO.txt
+        body_path: device/${{ env.DEVICE_PATH }}/INFO.txt
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
