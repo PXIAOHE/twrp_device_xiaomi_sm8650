@@ -79,7 +79,7 @@ BOARD_RECOVERYIMAGE_PARTITION_SIZE := 104857600
 BOARD_SUPER_PARTITION_SIZE := 8321499136
 BOARD_SUPER_PARTITION_GROUPS := qti_dynamic_partitions
 BOARD_QTI_DYNAMIC_PARTITIONS_SIZE := $(shell echo $$(($(BOARD_SUPER_PARTITION_SIZE) - 10485760)))
-BOARD_QTI_DYNAMIC_PARTITIONS_PARTITION_LIST := odm product system system_ext vendor vendor_dlkm mi_ext
+BOARD_QTI_DYNAMIC_PARTITIONS_PARTITION_LIST := system system_ext product vendor vendor_dlkm odm system_dlkm
 
 # System as root
 BOARD_ROOT_EXTRA_FOLDERS := bluetooth dsp firmware persist soccp
