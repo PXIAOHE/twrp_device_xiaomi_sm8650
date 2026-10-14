@@ -32,3 +32,9 @@ Flash it to the `recovery` partition of the active slot.
 ## Status
 
 - 2026-10-14: first assembly of this tree — not yet through a full CI build.
+- 2026-10-15: GUI2 (LVGL) pipeline verified on device end-to-end. Display fix:
+  `vendor.display.enable_spr=1` in system.prop — twrpminui programs
+  SDE_SPR_INIT_CFG from it; without it the panel scans out with B/R swapped
+  (blue renders pink) while screenshots stay correct. Official image: tag
+  `2026-10-14-38625219337`. Multi-device: push to a `device-<codename>`
+  branch to build that device (see `device-zorn`).
