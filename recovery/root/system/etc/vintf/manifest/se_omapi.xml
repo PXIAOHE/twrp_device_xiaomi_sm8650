@@ -1,0 +1,10 @@
+<!--
+    Input:
+        external/se_omapi/se_omapi.xml
+-->
+<manifest version="9.0" type="framework">
+    <hal format="aidl">
+        <name>android.se.omapi</name>
+        <fqname>ISecureElementService/default</fqname>
+    </hal>
+</manifest>
