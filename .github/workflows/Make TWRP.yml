@@ -1,0 +1,62 @@
+name: Make TWRP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Maximize Build Space
+      uses: easimon/maximize-build-space@master
+      with:
+        root-reserve-mb: 2048
+        temp-reserve-mb: 2048
+        swap-size-mb: 8192
+        remove-dotnet: 'true'
+        remove-android: 'true'
+        remove-haskell: 'true'
+        remove-codeql: 'true'
+        remove-docker-images: 'true'
+    - name: Set Variables
+      run: echo "{name}=date::$(date +%F)" >> $GITHUB_OUTPUT
+    - name: Prepare Environment
+      run: |
+        export HOME=${GITHUB_WORKSPACE}
+        cd ${GITHUB_WORKSPACE}
+        sudo apt -y install git aria2 
+        git clone https://gitlab.com/OrangeFox/misc/scripts
+        cd scripts
+        bash setup/android_build_env.sh
+        bash setup/install_android_sdk.sh || true
+    - name: Init Repo
+      run: |
+        mkdir ${GITHUB_WORKSPACE}/workspace
+        cd ${GITHUB_WORKSPACE}/workspace
+        git config --global user.name "YuKongA"
+        git config --global user.email "70465933+YuKongA@users.noreply.github.com"
+        repo init --depth=1 -u https://github.com/YuKongA/platform_manifest_twrp_aosp.git -b twrp-12.1
+    - name: Repo Sync
+      run: |
+        cd ${GITHUB_WORKSPACE}/workspace
+        repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+    - name: Repopick Patches
+      run: |
+        cd ${GITHUB_WORKSPACE}/workspace
+        source build/envsetup.sh
+        repopick 5675
+    - name: Clone Device Tree
+      run: |
+        cd ${GITHUB_WORKSPACE}/workspace
+        git clone https://github.com/YuKongA/device_xiaomi_houji_TWRP.git -b twrp-12.1 ./device/xiaomi/houji
+    - name: Building
+      run: |
+        cd ${GITHUB_WORKSPACE}/workspace
+        source build/envsetup.sh
+        lunch twrp_houji-eng
+        mka recoveryimage -j$(nproc --all)
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: houji_twrp-A14
+        path: workspace/out/target/product/houji/recovery.img
