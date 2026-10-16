@@ -169,8 +169,12 @@ jobs:
         for p in "$GITHUB_WORKSPACE/device/$DEVICE_PATH/patches/"*.patch; do
           [ -e "$p" ] || continue
           echo "--- applying $p ---"
-          git -C bootable/recovery apply --check "$p"
-          git -C bootable/recovery apply "$p"
+          if git -C bootable/recovery apply --check "$p" 2>/dev/null; then
+            git -C bootable/recovery apply "$p"
+          else
+            echo "clean apply failed; retrying with 3-way merge"
+            git -C bootable/recovery apply -3 "$p"
+          fi
         done
         git -C bootable/recovery status --short
 
