@@ -1,0 +1,10 @@
+# Started once qseecomd has registered its listeners; this HAL calls
+# QSEECom_start_app. se_omapi proxies to it, and that is how the weaver
+# transport reaches the eSE.
+service vendor.secure_element /system/bin/hal-launch.sh /vendor/bin/hw/android.hardware.secure_element-service.qti
+    disabled
+    class hal
+    user root
+    group nfc root
+    setenv LD_LIBRARY_PATH /vendor/lib64:/vendor/lib64/hw:/odm/lib64:/system/lib64:/sbin
+    seclabel u:r:recovery:s0

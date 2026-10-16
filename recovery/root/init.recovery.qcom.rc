@@ -1,0 +1,9 @@
+#
+# Copyright (C) 2025 The Android Open Source Project
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+# Each image keeps only its platform's SKU files. The SKU file pulls in its rc
+# files from /platform/<platform>/init; a SKU without one gets no vendor stack.
+import /platform/sku/${ro.boot.hardware.sku}.rc

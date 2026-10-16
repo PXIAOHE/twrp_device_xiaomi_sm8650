@@ -1,0 +1,44 @@
+/********************************************************************
+Copyright (c) 2018-2019,2022 Qualcomm Technologies, Inc.
+All Rights Reserved.
+Confidential and Proprietary - Qualcomm Technologies, Inc.
+*********************************************************************/
+{
+// Configuration for System Clients maintained by ssgtzd
+// MaxSystemClients: Number of Clients Allowed in System Domain (Apk)
+// ObjectsPerClient: Number of Objects that can be requested by each apk
+// MaxObjectCap: Max Cap on the Objects that can be used by System Clients.
+  "tz_configuration":[
+    { "MaxSystemClients" : 12},
+    { "MaxObjectsPerClient" : 15},
+    { "MaxObjectCap" : 100}
+  ],
+  "embedded_ta_images": [
+    { "name":"rtice"},
+    { "name":"qwes"},
+    { "name":"tzsc"},
+    { "name":"ConnectionSecurity"}
+  ],
+// libtaautoload reads this file once, at ssgtzd start, and from then on stats
+// these paths for the image of every GP trustlet QTEE asks for. The stock
+// paths are both inside /vendor, and TWRP mounts the stock vendor partition
+// over the ramdisk one whenever it refreshes the partition details, which
+// hides the modem partition we bind at /vendor/firmware_mnt. /firmware is the
+// same modem partition mounted at a name the stock partition cannot reach, so
+// name it first and keep the stock paths after it.
+  "ta_images": [
+    { "path":"/firmware/image/qwes.mbn"},
+    { "path":"/vendor/firmware_mnt/image/qwes.mbn"},
+    { "path":"/vendor/firmware/image/qwes.mbn"},
+    { "path":"/firmware/image/haventkn.mbn"},
+    { "path":"/vendor/firmware_mnt/image/haventkn.mbn"},
+    { "path":"/vendor/firmware/image/haventkn.mbn"},
+    { "path":"/firmware/image/tzsc.mbn"},
+    { "path":"/vendor/firmware_mnt/image/tzsc.mbn"}
+  ],
+  "ta_paths": [
+    { "path": "/firmware/image"},
+    { "path": "/vendor/firmware_mnt/image"},
+    { "path": "/vendor/firmware/image/"},
+  ]
+}

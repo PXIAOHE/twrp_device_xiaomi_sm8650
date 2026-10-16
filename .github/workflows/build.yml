@@ -1,0 +1,311 @@
+name: TWRP 16 Builder
+
+on:
+  workflow_dispatch:
+    inputs:
+      TWRP_MANIFEST_URL:
+        description: "TWRP manifest url"
+        required: true
+        default: "https://github.com/TWRP-Test/platform_manifest_twrp_aosp"
+      TWRP_MANIFEST_BRANCH:
+        description: "TWRP branch"
+        required: true
+        default: "twrp-16.0"
+      DEVICE_TREE_URL:
+        description: "Device tree url"
+        required: true
+        default: "https://github.com/PXIAOHE/twrp_device_xiaomi_sm8650"
+      DEVICE_TREE_BRANCH:
+        description: "Device tree branch"
+        required: true
+        default: "main"
+      DEVICE_PATH:
+        description: "Device path device/"
+        required: true
+        default: "xiaomi/manet"
+      DEVICE_NAME:
+        description: "Device name"
+        required: true
+        default: "manet"
+      LUNCH_TARGET:
+        description: "lunch twrp_ (default same as device name)"
+        required: false
+        default: ""
+      BUILD_PARTITION:
+        description: "Build partition"
+        required: true
+        default: "recovery"
+      RECOVERY_FORK_REF:
+        description: "lingqiqi5211 recovery fork ref (branch/tag, default taro-lvgl)"
+        required: false
+        default: "taro-lvgl"
+      RECOVERY_FORK_SHA:
+        description: "fork commit pin (empty = track the ref head)"
+        required: false
+        default: "3b77055e3e7e872e847dfde8d06aba7d772b3016"
+  push:
+    branches: [ main, 'device-*' ]
+    paths-ignore:
+      - "**.md"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TWRP_MANIFEST_URL: ${{ github.event.inputs.TWRP_MANIFEST_URL || 'https://github.com/TWRP-Test/platform_manifest_twrp_aosp' }}
+  TWRP_MANIFEST_BRANCH: ${{ github.event.inputs.TWRP_MANIFEST_BRANCH || 'twrp-16.0' }}
+  DEVICE_TREE_URL: ${{ github.event.inputs.DEVICE_TREE_URL || 'https://github.com/PXIAOHE/twrp_device_xiaomi_sm8650' }}
+  DEVICE_TREE_BRANCH: ${{ github.event.inputs.DEVICE_TREE_BRANCH || 'main' }}
+  DEVICE_PATH: ${{ github.event.inputs.DEVICE_PATH || 'xiaomi/manet' }}
+  DEVICE_NAME: ${{ github.event.inputs.DEVICE_NAME || 'manet' }}
+  LUNCH_TARGET: ${{ github.event.inputs.LUNCH_TARGET || github.event.inputs.DEVICE_NAME || 'manet' }}
+  BUILD_PARTITION: ${{ github.event.inputs.BUILD_PARTITION || 'recovery' }}
+  RECOVERY_FORK_REF: ${{ github.event.inputs.RECOVERY_FORK_REF || 'taro-lvgl' }}
+  RECOVERY_FORK_SHA: ${{ github.event.inputs.RECOVERY_FORK_SHA || '3b77055e3e7e872e847dfde8d06aba7d772b3016' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Resolve device from branch
+      run: |
+        BRANCH="${GITHUB_REF_NAME}"
+        if [[ "$BRANCH" == device-* ]]; then
+          DEV="${BRANCH#device-}"
+          echo "DEVICE_NAME=$DEV" >> "$GITHUB_ENV"
+          echo "DEVICE_PATH=xiaomi/$DEV" >> "$GITHUB_ENV"
+          echo "LUNCH_TARGET=$DEV" >> "$GITHUB_ENV"
+          echo "DEVICE_TREE_BRANCH=$BRANCH" >> "$GITHUB_ENV"
+          echo "device resolved from branch: $DEV"
+        fi
+    - name: Show build info
+      run: |
+        {
+          echo 'BUILD_INFO<<EOF'
+          echo
+          echo Manifest url: $TWRP_MANIFEST_URL
+          echo Manifest branch: $TWRP_MANIFEST_BRANCH
+          echo Device tree url: $DEVICE_TREE_URL
+          echo Device tree branch: $DEVICE_TREE_BRANCH
+          echo Device path: $DEVICE_PATH
+          echo Device name: $DEVICE_NAME
+          echo Lunch target: $LUNCH_TARGET
+          echo Build target: $BUILD_PARTITION.img
+          echo Build date: `date`
+          echo
+          echo EOF
+        } >> "$GITHUB_ENV"
+        echo BUILD_DATE=`date +%F` >> "$GITHUB_ENV"
+        echo "REPO_NAME=$(basename $TWRP_MANIFEST_URL)" >> "$GITHUB_ENV"
+
+    - name: Cleanup
+      uses: rokibhasansagar/slimhub_actions@main
+
+    - name: Maximize build space
+      uses: easimon/maximize-build-space@master
+
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        create-symlink: true
+
+    - name: Setup zram
+      run: |
+        sudo apt install linux-modules-extra-$(uname -r) zram-tools -y
+        sudo modprobe zram
+        sudo sed -i 's/^#PERCENT=50/PERCENT=90/' /etc/default/zramswap
+        sudo sed -i 's/^#PRIORITY=100/PRIORITY=1000/' /etc/default/zramswap
+        sudo systemctl restart zramswap
+        zramctl
+
+    - name: Setup environment
+      run: |
+        export DEBIAN_FRONTEND=noninteractive
+        sudo apt update && sudo apt upgrade -y
+        sudo apt install repo -y
+        git config --global user.name ${{ github.actor }}
+        git config --global user.email ${{ github.actor }}@users.noreply.github.com
+
+    - name: Sync source
+      run: |
+        mkdir -p /tmp/ci-logs
+        exec > >(stdbuf -oL tee /tmp/ci-logs/sync.log) 2>&1
+        repo init -u $TWRP_MANIFEST_URL -b $TWRP_MANIFEST_BRANCH --depth=1
+        (while true; do echo "Syncing source..."; sleep 60; done) &
+        TIP_PID=$!
+        synced=""
+        for attempt in 1 2 3; do
+          echo "repo sync attempt $attempt/3"
+          if repo sync; then
+            synced=1
+            break
+          fi
+          echo "repo sync failed (attempt $attempt); retrying in 60s..."
+          sleep 60
+        done
+        kill $TIP_PID || true
+        if [ -z "$synced" ]; then
+          echo "repo sync failed after 3 attempts"
+          exit 1
+        fi
+        exit 0
+
+    - name: Setup device
+      run: |
+        DEVICE_DIR="device/$DEVICE_PATH"
+        mkdir -p "$(dirname "$DEVICE_DIR")"
+        git clone $DEVICE_TREE_URL -b $DEVICE_TREE_BRANCH "$DEVICE_DIR"
+
+    - name: Fetch GUI2 (LVGL) sources
+      run: |
+        set -e
+        echo "--- replacing bootable/recovery with the GUI2 fork ($RECOVERY_FORK_REF) ---"
+        rm -rf bootable/recovery
+        git clone --single-branch -b "$RECOVERY_FORK_REF" https://github.com/lingqiqi5211/android_bootable_recovery bootable/recovery
+        if [ -n "$RECOVERY_FORK_SHA" ]; then
+          git -C bootable/recovery checkout --detach "$RECOVERY_FORK_SHA"
+          echo "pinned recovery fork to $RECOVERY_FORK_SHA"
+        fi
+        echo "recovery fork [$RECOVERY_FORK_REF]: $(git -C bootable/recovery log --oneline -1)"
+        echo "recovery fork sha: $(git -C bootable/recovery rev-parse HEAD)"
+        echo "--- adding GUI2 dependency projects ---"
+        git clone --depth=1 https://github.com/TWRP-Test/android_external_lvgl external/lvgl
+        git clone --depth=1 https://github.com/TWRP-Test/android_external_libvpx external/libvpx
+        git clone --depth=1 https://github.com/TWRP-Test/android_external_libwebm external/libwebm
+        echo "lvgl: $(git -C external/lvgl log --oneline -1)"
+        echo "libvpx: $(git -C external/libvpx log --oneline -1)"
+        echo "libwebm: $(git -C external/libwebm log --oneline -1)"
+
+    - name: Apply GUI2 patches
+      run: |
+        set -e
+        for p in "$GITHUB_WORKSPACE/device/$DEVICE_PATH/patches/"*.patch; do
+          [ -e "$p" ] || continue
+          echo "--- applying $p ---"
+          if git -C bootable/recovery apply --check "$p" 2>/dev/null; then
+            git -C bootable/recovery apply "$p"
+          else
+            echo "clean apply failed; retrying with 3-way merge"
+            git -C bootable/recovery apply -3 "$p"
+          fi
+        done
+        git -C bootable/recovery status --short
+
+    - name: Generate build info
+      run: |
+        echo -e "$BUILD_INFO" >> INFO.txt
+        echo "Change log:" >> INFO.txt
+        set +e
+        LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null)
+        if [ $? -eq 0 ]; then
+          git log "$LAST_TAG"..HEAD --pretty=format:"- %h-%an: %s" >> INFO.txt
+        else
+          git log --pretty=format:"- %h-%an: %s" >> INFO.txt
+        fi
+        cat INFO.txt
+      working-directory: device/${{ env.DEVICE_PATH }}
+
+    - name: Build TWRP
+      run: |
+        mkdir -p /tmp/ci-logs
+        exec > >(stdbuf -oL tee /tmp/ci-logs/build.log) 2>&1
+        source build/envsetup.sh
+        export ALLOW_MISSING_DEPENDENCIES=true
+        export CCACHE_DIR=.ccache
+        export CCACHE_EXEC=$(command -v ccache)
+        export CCACHE_MAXSIZE=5G
+        export USE_CCACHE=1
+        export YARP_PLATFORM=sm8850
+        lunch twrp_$LUNCH_TARGET
+        # GUI2 dev docs: a final recoveryimage must be preceded by installclean
+        m installclean
+        (while true; do echo `date +%T` "Building TWRP..."; free -h; sleep 10; done) &
+        TIP_PID=$!
+        m ${BUILD_PARTITION}image
+        mv out/target/product/$DEVICE_NAME/${BUILD_PARTITION}.img out/target/product/$DEVICE_NAME/TWRP-3.7.1-16-$DEVICE_NAME-$BUILD_DATE.img
+        kill $TIP_PID && exit 0
+
+    - name: Verify theme overlay
+      run: |
+        ROOT="out/target/product/$DEVICE_NAME/recovery/root"
+        echo "--- theme overlay check ---"
+        GOT="$(md5sum "$ROOT/twres/portrait.xml" 2>/dev/null | cut -d' ' -f1)"
+        EXPECT="9ecfc7ca2c1079f14b17b5edad421176"
+        if [ "$GOT" = "$EXPECT" ]; then
+          echo "THEME OVERLAY OK ($GOT)"
+        else
+          echo "::error::THEME OVERLAY FAILED: portrait.xml md5=$GOT expected=$EXPECT (device-tree twres did not win)"
+          ls -la "$ROOT/twres/" 2>/dev/null || true
+          exit 1
+        fi
+        if grep -q "switch_slot_confirm" "$ROOT/twres/languages/zh_CN.xml"; then
+          echo "zh_CN string OK"
+        else
+          echo "::error::zh_CN.xml missing switch_slot_confirm"
+          exit 1
+        fi
+        echo "--- SPR color-order prop check (informational for this device) ---"
+        if grep -q "vendor.display.enable_spr=1" "$ROOT/prop.default"; then
+          echo "enable_spr prop OK"
+        else
+          echo "::warning::prop.default has no vendor.display.enable_spr=1 (not set by this device tree)"
+        fi
+        echo "--- recovery binary GUI2 markers ---"
+        BIN="$ROOT/system/bin/recovery"
+        if [ -f "$BIN" ]; then
+          echo "lvgl-related strings: $(strings "$BIN" 2>/dev/null | grep -c -i -e lvgl -e 'gui2_' || true)"
+          strings "$BIN" 2>/dev/null | grep -o "gui2_[a-z_]*" | sort -u | head -12 || true
+          if strings "$BIN" 2>/dev/null | grep -q "twrp_crypto_pwd"; then
+            echo "auto-decrypt patch marker OK"
+          else
+            echo "::warning::saved-password marker (twrp_crypto_pwd) not found in recovery binary"
+          fi
+        else
+          echo "recovery binary not found at $BIN"
+        fi
+
+    - name: Publish logs to ci-logs branch
+      if: failure()
+      run: |
+        sleep 1
+        if [ -d "device/$DEVICE_PATH/.git" ]; then
+          cd "device/$DEVICE_PATH"
+        else
+          echo "device tree missing (early failure); publishing from a fresh clone"
+          git clone "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" "$RUNNER_TEMP/logpush"
+          cd "$RUNNER_TEMP/logpush"
+        fi
+        git config user.name "ci-logs"
+        git config user.email "ci-logs@users.noreply.github.com"
+        git checkout --orphan ci-logs
+        git reset
+        mkdir -p .ci-logs
+        copied=""
+        for f in sync build; do
+          if [ -s "/tmp/ci-logs/$f.log" ]; then
+            cp "/tmp/ci-logs/$f.log" ".ci-logs/$f.log"
+            copied=1
+          fi
+        done
+        if [ -z "$copied" ]; then
+          echo "no logs captured" > .ci-logs/build.log
+        fi
+        printf 'run_id: %s\nrun_url: https://github.com/%s/actions/runs/%s\nattempt: %s\n' \
+          "${{ github.run_id }}" "${{ github.repository }}" "${{ github.run_id }}" "${{ github.run_attempt }}" > .ci-logs/run-info.txt
+        git add -f .ci-logs
+        git commit -m "ci-logs: run ${{ github.run_id }} attempt ${{ github.run_attempt }}"
+        git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-logs:ci-logs
+
+    - name: Upload to Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          out/target/product/${{ env.DEVICE_NAME }}/TWRP-3.7.1-16-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}.img
+        name: TWRP-3.7.1-16-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}-${{ github.run_id }}
+        tag_name: ${{ env.BUILD_DATE }}-${{ github.run_id }}
+        body_path: device/${{ env.DEVICE_PATH }}/INFO.txt
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

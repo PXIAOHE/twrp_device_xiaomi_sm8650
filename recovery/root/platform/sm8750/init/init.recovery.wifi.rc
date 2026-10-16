@@ -1,0 +1,64 @@
+# SM8750 / sun Qualcomm Wi-Fi recovery support.
+
+on init
+    chown root wifi /tmp
+    chmod 0775 /tmp
+    mkdir /tmp/recovery 0777 root root
+    mkdir /tmp/recovery/sockets 0770 root wifi
+    chown root wifi /tmp/recovery/sockets
+    chmod 0770 /tmp/recovery/sockets
+    mkdir /data/misc 0771 system system
+    mkdir /data/misc/wifi 0771 wifi wifi
+    mkdir /data/vendor 0771 system system
+    mkdir /data/vendor/firmware 0771 system system
+    mkdir /data/vendor/firmware/update 0771 system system
+    mkdir /data/vendor/firmware/update/wlan 0771 system system
+
+on early-boot
+    write /sys/kernel/icnss/wlan_en_delay 1000
+    write /sys/kernel/icnss/wpss_boot 1
+    write /proc/sys/kernel/firmware_config/force_sysfs_fallback 1
+
+# variant-script names the chip in ro.twrp.wlan_chip once its files are copied;
+# load-wlan-driver.sh fetches that chip's qca_cld3 module from the device's own
+# vendor_dlkm, sets fs_ready and inserts it.
+on property:twrp.firmware.mounted=true && property:twrp.variant.files_copied=1
+    start load-wlan-driver
+
+# The interface only appears once the firmware download finishes, about ten
+# seconds in. init's own wait command stops its whole command queue for that
+# long, and the ctl.start that prepdecrypt sends for KeyMint sits in that
+# queue; measured on piano, init stood still for 10234 ms. wait-wlan0.sh
+# polls in the background and raises twrp.wifi.driver.ready itself.
+on property:twrp.wifi.driver.loaded=true
+    start wait-wlan0
+
+on property:twrp.wifi.driver.ready=true
+    start wpa_supplicant
+
+service wpa_supplicant /system/bin/wpa_supplicant -Dnl80211 -iwlan0 -c/system/etc/wifi/wpa_supplicant.conf
+    class main
+    user root
+    group root wifi inet net_admin
+    capabilities NET_ADMIN NET_RAW
+    disabled
+    seclabel u:r:recovery:s0
+
+service load-wlan-driver /system/bin/load-wlan-driver.sh
+    disabled
+    oneshot
+    seclabel u:r:recovery:s0
+
+service wait-wlan0 /system/bin/wait-wlan0.sh
+    disabled
+    oneshot
+    seclabel u:r:recovery:s0
+
+service dhcpcd /system/bin/dhcpcd wlan0 -B
+    class main
+    user root
+    group root inet net_admin
+    capabilities NET_ADMIN NET_RAW
+    disabled
+    oneshot
+    seclabel u:r:recovery:s0

@@ -1,0 +1,18 @@
+//
+// Copyright (C) 2025 The Android Open Source Project
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+
+soong_namespace {
+}
+
+cc_library_shared {
+    name: "libvibrator_alias",
+    recovery: true,
+    srcs: ["vibrator_alias/vibrator_alias.c"],
+    cflags: [
+        "-Wall",
+        "-Werror",
+    ],
+}

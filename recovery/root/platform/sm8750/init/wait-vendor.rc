@@ -1,0 +1,6 @@
+service odm.wait-vendor /system/bin/wait-vendor.sh
+    user root
+    group root
+    disabled
+    oneshot
+    seclabel u:r:recovery:s0
