@@ -166,7 +166,7 @@ jobs:
     - name: Apply GUI2 patches
       run: |
         set -e
-        for p in "device/$DEVICE_PATH/patches/"*.patch; do
+        for p in "$GITHUB_WORKSPACE/device/$DEVICE_PATH/patches/"*.patch; do
           [ -e "$p" ] || continue
           echo "--- applying $p ---"
           git -C bootable/recovery apply --check "$p"
