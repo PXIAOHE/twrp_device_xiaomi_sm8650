@@ -131,11 +131,27 @@ jobs:
 
     - name: Sync source
       run: |
+        mkdir -p /tmp/ci-logs
+        exec > >(stdbuf -oL tee /tmp/ci-logs/sync.log) 2>&1
         repo init -u $TWRP_MANIFEST_URL -b $TWRP_MANIFEST_BRANCH --depth=1
         (while true; do echo "Syncing source..."; sleep 60; done) &
         TIP_PID=$!
-        repo sync
-        kill $TIP_PID && exit 0
+        synced=""
+        for attempt in 1 2 3; do
+          echo "repo sync attempt $attempt/3"
+          if repo sync; then
+            synced=1
+            break
+          fi
+          echo "repo sync failed (attempt $attempt); retrying in 60s..."
+          sleep 60
+        done
+        kill $TIP_PID || true
+        if [ -z "$synced" ]; then
+          echo "repo sync failed after 3 attempts"
+          exit 1
+        fi
+        exit 0
 
     - name: Setup device
       run: |
@@ -256,16 +272,27 @@ jobs:
       if: failure()
       run: |
         sleep 1
-        cd device/$DEVICE_PATH
+        if [ -d "device/$DEVICE_PATH/.git" ]; then
+          cd "device/$DEVICE_PATH"
+        else
+          echo "device tree missing (early failure); publishing from a fresh clone"
+          git clone "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" "$RUNNER_TEMP/logpush"
+          cd "$RUNNER_TEMP/logpush"
+        fi
         git config user.name "ci-logs"
         git config user.email "ci-logs@users.noreply.github.com"
         git checkout --orphan ci-logs
         git reset
         mkdir -p .ci-logs
-        if [ -s /tmp/ci-logs/build.log ]; then
-          cp /tmp/ci-logs/build.log .ci-logs/build.log
-        else
-          echo "no build log captured" > .ci-logs/build.log
+        copied=""
+        for f in sync build; do
+          if [ -s "/tmp/ci-logs/$f.log" ]; then
+            cp "/tmp/ci-logs/$f.log" ".ci-logs/$f.log"
+            copied=1
+          fi
+        done
+        if [ -z "$copied" ]; then
+          echo "no logs captured" > .ci-logs/build.log
         fi
         printf 'run_id: %s\nrun_url: https://github.com/%s/actions/runs/%s\nattempt: %s\n' \
           "${{ github.run_id }}" "${{ github.repository }}" "${{ github.run_id }}" "${{ github.run_attempt }}" > .ci-logs/run-info.txt
