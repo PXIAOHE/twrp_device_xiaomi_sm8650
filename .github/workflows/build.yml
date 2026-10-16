@@ -36,13 +36,13 @@ on:
         required: true
         default: "recovery"
       RECOVERY_FORK_REF:
-        description: "lingqiqi5211 recovery fork ref (branch/tag, default taro-lvgl)"
+        description: "lingqiqi5211 recovery fork ref (branch/tag, default lvgl)"
         required: false
-        default: "taro-lvgl"
+        default: "lvgl"
       RECOVERY_FORK_SHA:
         description: "fork commit pin (empty = track the ref head)"
         required: false
-        default: "3b77055e3e7e872e847dfde8d06aba7d772b3016"
+        default: "c6eedad856f8badd5b104e23331aded4474ed28e"
   push:
     branches: [ main, 'device-*' ]
     paths-ignore:
@@ -61,8 +61,8 @@ env:
   DEVICE_NAME: ${{ github.event.inputs.DEVICE_NAME || 'manet' }}
   LUNCH_TARGET: ${{ github.event.inputs.LUNCH_TARGET || github.event.inputs.DEVICE_NAME || 'manet' }}
   BUILD_PARTITION: ${{ github.event.inputs.BUILD_PARTITION || 'recovery' }}
-  RECOVERY_FORK_REF: ${{ github.event.inputs.RECOVERY_FORK_REF || 'taro-lvgl' }}
-  RECOVERY_FORK_SHA: ${{ github.event.inputs.RECOVERY_FORK_SHA || '3b77055e3e7e872e847dfde8d06aba7d772b3016' }}
+  RECOVERY_FORK_REF: ${{ github.event.inputs.RECOVERY_FORK_REF || 'lvgl' }}
+  RECOVERY_FORK_SHA: ${{ github.event.inputs.RECOVERY_FORK_SHA || 'c6eedad856f8badd5b104e23331aded4474ed28e' }}
 
 jobs:
   build:
@@ -162,6 +162,8 @@ jobs:
     - name: Fetch GUI2 (LVGL) sources
       run: |
         set -e
+        mkdir -p /tmp/ci-logs
+        exec > >(stdbuf -oL tee -a /tmp/ci-logs/build.log) 2>&1
         echo "--- replacing bootable/recovery with the GUI2 fork ($RECOVERY_FORK_REF) ---"
         rm -rf bootable/recovery
         git clone --single-branch -b "$RECOVERY_FORK_REF" https://github.com/lingqiqi5211/android_bootable_recovery bootable/recovery
@@ -182,6 +184,8 @@ jobs:
     - name: Apply GUI2 patches
       run: |
         set -e
+        mkdir -p /tmp/ci-logs
+        exec > >(stdbuf -oL tee -a /tmp/ci-logs/build.log) 2>&1
         for p in "$GITHUB_WORKSPACE/device/$DEVICE_PATH/patches/"*.patch; do
           [ -e "$p" ] || continue
           echo "--- applying $p ---"
