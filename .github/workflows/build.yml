@@ -39,6 +39,10 @@ on:
         description: "lingqiqi5211 recovery fork ref (branch/tag, default taro-lvgl)"
         required: false
         default: "taro-lvgl"
+      RECOVERY_FORK_SHA:
+        description: "fork commit pin (empty = track the ref head)"
+        required: false
+        default: "3b77055e3e7e872e847dfde8d06aba7d772b3016"
   push:
     branches: [ main, 'device-*' ]
     paths-ignore:
@@ -58,6 +62,7 @@ env:
   LUNCH_TARGET: ${{ github.event.inputs.LUNCH_TARGET || github.event.inputs.DEVICE_NAME || 'manet' }}
   BUILD_PARTITION: ${{ github.event.inputs.BUILD_PARTITION || 'recovery' }}
   RECOVERY_FORK_REF: ${{ github.event.inputs.RECOVERY_FORK_REF || 'taro-lvgl' }}
+  RECOVERY_FORK_SHA: ${{ github.event.inputs.RECOVERY_FORK_SHA || '3b77055e3e7e872e847dfde8d06aba7d772b3016' }}
 
 jobs:
   build:
@@ -143,7 +148,11 @@ jobs:
         set -e
         echo "--- replacing bootable/recovery with the GUI2 fork ($RECOVERY_FORK_REF) ---"
         rm -rf bootable/recovery
-        git clone --depth=1 -b "$RECOVERY_FORK_REF" https://github.com/lingqiqi5211/android_bootable_recovery bootable/recovery
+        git clone --single-branch -b "$RECOVERY_FORK_REF" https://github.com/lingqiqi5211/android_bootable_recovery bootable/recovery
+        if [ -n "$RECOVERY_FORK_SHA" ]; then
+          git -C bootable/recovery checkout --detach "$RECOVERY_FORK_SHA"
+          echo "pinned recovery fork to $RECOVERY_FORK_SHA"
+        fi
         echo "recovery fork [$RECOVERY_FORK_REF]: $(git -C bootable/recovery log --oneline -1)"
         echo "recovery fork sha: $(git -C bootable/recovery rev-parse HEAD)"
         echo "--- adding GUI2 dependency projects ---"
@@ -153,6 +162,17 @@ jobs:
         echo "lvgl: $(git -C external/lvgl log --oneline -1)"
         echo "libvpx: $(git -C external/libvpx log --oneline -1)"
         echo "libwebm: $(git -C external/libwebm log --oneline -1)"
+
+    - name: Apply GUI2 patches
+      run: |
+        set -e
+        for p in "device/$DEVICE_PATH/patches/"*.patch; do
+          [ -e "$p" ] || continue
+          echo "--- applying $p ---"
+          git -C bootable/recovery apply --check "$p"
+          git -C bootable/recovery apply "$p"
+        done
+        git -C bootable/recovery status --short
 
     - name: Generate build info
       run: |
@@ -219,6 +239,11 @@ jobs:
         if [ -f "$BIN" ]; then
           echo "lvgl-related strings: $(strings "$BIN" 2>/dev/null | grep -c -i -e lvgl -e 'gui2_' || true)"
           strings "$BIN" 2>/dev/null | grep -o "gui2_[a-z_]*" | sort -u | head -12 || true
+          if strings "$BIN" 2>/dev/null | grep -q "twrp_crypto_pwd"; then
+            echo "auto-decrypt patch marker OK"
+          else
+            echo "::warning::saved-password marker (twrp_crypto_pwd) not found in recovery binary"
+          fi
         else
           echo "recovery binary not found at $BIN"
         fi

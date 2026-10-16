@@ -1,0 +1,166 @@
+diff --git a/gui2/backend/twrp_decrypt_backend.cpp b/gui2/backend/twrp_decrypt_backend.cpp
+index 1e0d215..6df99f8 100644
+--- a/gui2/backend/twrp_decrypt_backend.cpp
++++ b/gui2/backend/twrp_decrypt_backend.cpp
+@@ -2,8 +2,11 @@
+ 
+ #include <utility>
+ 
++#include <sys/stat.h>
+ #include <unistd.h>
+ 
++#include <cstdint>
++#include <cstdio>
+ #include <cstdlib>
+ 
+ #include "data.hpp"
+@@ -120,6 +123,10 @@ void twrp_decrypt_backend::run(std::string password) {
+       op_status = 1;
+     else {
+       DataManager::SetValue(TW_IS_ENCRYPTED, 0);
++      // Remember what unlocked the partition so the next boot can skip the
++      // prompt. The default-password sentinel is not a real secret.
++      if (!password.empty() && password != "!")
++        store_saved_crypto_password(password);
+       DataManager::SetBackupFolder();
+ 
+       int has_datamedia;
+@@ -159,4 +166,45 @@ void twrp_decrypt_backend::acknowledge() {
+   if (state_ != decrypt_state::RUNNING) state_ = decrypt_state::IDLE;
+ }
+ 
++namespace {
++
++// Persist lives on its own partition and is readable before /data unlocks,
++// which is the whole point: the next boot reads the password back before it
++// can mount anything that is encrypted.
++constexpr const char* kSavedPasswordPath = TW_PERSIST_DIR "/.twrp_crypto_pwd";
++constexpr size_t kMaxSavedPassword = 256;
++// Not encryption: this only keeps the password from showing up in a casual
++// look at the file. Do not rely on it for anything stronger.
++constexpr uint8_t kPasswordObfuscation = 0x5A;
++
++}  // namespace
++
++std::string load_saved_crypto_password() {
++  FILE* file = fopen(kSavedPasswordPath, "rb");
++  if (file == nullptr) return std::string();
++  char raw[kMaxSavedPassword];
++  const size_t size = fread(raw, 1, sizeof(raw), file);
++  fclose(file);
++  std::string password;
++  password.reserve(size);
++  for (size_t i = 0; i < size; ++i)
++    password.push_back(static_cast<char>(raw[i] ^ kPasswordObfuscation));
++  return password;
++}
++
++void store_saved_crypto_password(const std::string& password) {
++  if (password.empty() || password.size() > kMaxSavedPassword) return;
++  // The folder normally exists already (the settings file lives there);
++  // EEXIST is fine, anything else just means the write below fails too.
++  mkdir(TW_PERSIST_DIR, 0777);
++  FILE* file = fopen(kSavedPasswordPath, "wb");
++  if (file == nullptr) return;
++  for (char c : password)
++    fputc(static_cast<uint8_t>(c) ^ kPasswordObfuscation, file);
++  fclose(file);
++  chmod(kSavedPasswordPath, 0600);
++}
++
++void clear_saved_crypto_password() { remove(kSavedPasswordPath); }
++
+ }  // namespace gui2_backend
+diff --git a/gui2/backend/twrp_decrypt_backend.h b/gui2/backend/twrp_decrypt_backend.h
+index 073f2dd..f3264c2 100644
+--- a/gui2/backend/twrp_decrypt_backend.h
++++ b/gui2/backend/twrp_decrypt_backend.h
+@@ -38,6 +38,15 @@ class twrp_decrypt_backend final : public decrypt_backend {
+   std::thread worker_;
+ };
+ 
++// The remembered decryption password, kept in the TWRP folder on the persist
++// partition so a later boot can unlock without asking. The file is lightly
++// obfuscated to keep it out of casual view; anyone who can read the persist
++// partition can still recover the password, so treat the device as unlocked
++// for anyone with physical or root access.
++std::string load_saved_crypto_password();
++void store_saved_crypto_password(const std::string& password);
++void clear_saved_crypto_password();
++
+ }  // namespace gui2_backend
+ 
+ #endif  // GUI2_BACKEND_TWRP_DECRYPT_BACKEND_H
+diff --git a/gui2/gui2.cpp b/gui2/gui2.cpp
+index 79822d4..d7afc0e 100644
+--- a/gui2/gui2.cpp
++++ b/gui2/gui2.cpp
+@@ -15,6 +15,7 @@
+ #include "app/screen_actions.h"
+ #include "backend/hardware_settings.h"
+ #include "backend/screen_backend.h"
++#include "backend/twrp_decrypt_backend.h"
+ #include "components/apply_button.h"
+ #include "components/check_row.h"
+ #include "components/setting_card.h"
+@@ -3779,6 +3780,7 @@ static void refresh_decrypt_progress(void) {
+       startup->status().pause == gui2_backend::startup_pause::DECRYPT) {
+     // Legacy leaves the page with tw_page_done and lets startup go on; the
+     // rest of it may still show a page, and home comes when it is done.
++    page_state.decrypt_used_saved = false;
+     page_state.decrypt_during_startup = true;
+     startup->finish_decrypt();
+     return;
+@@ -3790,8 +3792,16 @@ static void refresh_decrypt_progress(void) {
+   page_state.decrypt_refreshing = false;
+   if (refreshing || state == gui2_backend::decrypt_state::DONE) {
+     page_state.decrypt_failed = false;
++    page_state.decrypt_used_saved = false;
+     navigate_to(page_kind::HOME, nullptr, page_transition::FADE);
+   } else {
++    if (page_state.decrypt_used_saved) {
++      // The saved password no longer works (for example the lock password
++      // changed in the system); drop it so the user is asked once instead
++      // of on every boot.
++      gui2_backend::clear_saved_crypto_password();
++      page_state.decrypt_used_saved = false;
++    }
+     page_state.decrypt_failed = true;
+     navigate_to(page_kind::DECRYPT, nullptr, page_transition::REPLACE);
+   }
+@@ -5229,9 +5239,19 @@ static void show_decrypt_page(page_transition transition) {
+   page_state.decrypt_input = view.input;
+   page_state.decrypt_keyboard = view.keyboard;
+   page_state.decrypt_status = view.status;
+-  if (decrypt != nullptr && decrypt->kind() == gui2_backend::lock_kind::DEFAULT &&
+-      !page_state.decrypt_failed)
+-    decrypt_attempt(kDefaultCryptoPassword);
++  if (decrypt != nullptr && !page_state.decrypt_failed) {
++    if (decrypt->kind() == gui2_backend::lock_kind::DEFAULT) {
++      decrypt_attempt(kDefaultCryptoPassword);
++    } else {
++      // A password saved by an earlier successful unlock is tried before
++      // asking. A failure clears it (see refresh_decrypt_progress).
++      const std::string saved = gui2_backend::load_saved_crypto_password();
++      if (!saved.empty()) {
++        page_state.decrypt_used_saved = true;
++        decrypt_attempt(saved);
++      }
++    }
++  }
+ }
+ 
+ static void show_format_data_page(page_transition transition) {
+diff --git a/gui2/pages/page_state.h b/gui2/pages/page_state.h
+index 34626fe..07d1fdf 100644
+--- a/gui2/pages/page_state.h
++++ b/gui2/pages/page_state.h
+@@ -178,6 +178,8 @@ struct page_state {
+   uint64_t decrypt_last_poll_ms = 0;
+   uint64_t decrypt_prompt_ms = 0;
+   bool decrypt_refreshing = false;
++  // The running attempt uses the saved password; a failure clears the file.
++  bool decrypt_used_saved = false;
+   // The attempt ran during startup's decrypt pause; the page stays until
+   // startup finishes.
+   bool decrypt_during_startup = false;
