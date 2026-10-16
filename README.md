@@ -1,40 +1,38 @@
-# TWRP device tree for Xiaomi manet (Redmi K70 Pro, SM8650 / pineapple)
+# TWRP device tree for Xiaomi vermeer (Redmi K70 / POCO F6 Pro, SM8550 / kalama)
 
-TWRP 16 device tree for the Redmi K70 Pro (`manet`), assembled from:
+TWRP 16 device tree for Redmi K70 (`vermeer`), assembled from:
 
-- **Build skeleton + CI**: [YuKongA/twrp_device_xiaomi_sm8850](https://github.com/YuKongA/twrp_device_xiaomi_sm8850) — TWRP 16.0 platform + parameterised GitHub Actions builder (`TWRP 16 Builder`).
-- **Runtime payload**: manet-specific `recovery/root/{odm,vendor,system}` + fstab/flags/init rc, taken from the stock HyperOS 3.0.306 recovery environment (qseecomd / gatekeeper / keymint / weaver / vibratorfeature / goodix touch stack).
+- **Build skeleton + CI**: the manet (K70 Pro) tree, itself based on
+  [YuKongA/twrp_device_xiaomi_sm8850](https://github.com/YuKongA/twrp_device_xiaomi_sm8850) —
+  TWRP 16.0 platform + parameterised GitHub Actions builder (`TWRP 16 Builder`).
+- **Board values + touch payload**: community vermeer trees
+  (keosh1/device_xiaomi_vermeer-TWRP, ByteWave1014/device_xiaomi_vermeer-TWRP).
+- **Runtime payload**: adapted from the manet stock recovery environment
+  (qseecomd / gatekeeper / keymint / weaver / vibratorfeature), with the
+  vermeer goodix touch firmware (`/vendor/firmware/` and `/lib/firmware/`).
+- **UI fork**: the GUI2/YARP fork, pinned in CI (`lingqiqi5211`, `taro-lvgl` @ `3b77055`).
 
 ## Build (GitHub Actions)
 
-Builds run **automatically on every push to `main`** (docs-only changes are skipped).
-Manual trigger: Actions → **TWRP 16 Builder** → *Run workflow*. Defaults are pre-set for this repo:
+Push to the `device-vermeer` branch builds automatically (TWRP 16 Builder workflow).
+Manual trigger: Actions -> **TWRP 16 Builder** -> *Run workflow* (branch defaults are
+overridden by the branch resolution step for `device-*` branches).
 
-| Input | Default |
-| --- | --- |
-| TWRP manifest | `TWRP-Test/platform_manifest_twrp_aosp` @ `twrp-16.0` |
-| Device tree | this repo @ `main` |
-| Device path | `xiaomi/manet` |
-| Device name | `manet` |
+Output: `TWRP-3.7.1-16-vermeer-<date>.img` — a **ramdisk-only** recovery image
+(kernel-less, matching the stock vermeer recovery layout; the running kernel comes from
+`boot`). Flash it to the `recovery` partition of the active slot.
 
-Output: `TWRP-3.7.1-16-manet-<date>.img` — a **ramdisk-only** recovery image
-(kernel-less, matching the stock manet recovery layout; the running kernel comes from `boot`).
-Flash it to the `recovery` partition of the active slot.
+## Flash
 
-## Device notes
-
-- manet: A/B device, only the **b** slot is provisioned — never flash the `a` slot.
-- `recovery` partition: 100 MB, ramdisk-only (boot header v4, lz4_legacy ramdisk).
-- Decryption: FBE `wrappedkey_v0`, keydirectory `/metadata/vold/metadata_encryption`.
-- USB-OTG: static entry in `twrp.flags`; plug the drive, then tap *USB-OTG* once under Mount.
-- `variant-script.sh` falls back to the `manet` branch for unknown SKUs.
+- bootloader: `fastboot flash recovery TWRP-3.7.1-16-vermeer-*.img`
+- existing recovery/root shell: `dd if=TWRP-*.img of=/dev/block/by-name/recovery_<a|b> bs=1M`
 
 ## Status
 
-- 2026-10-14: first assembly of this tree — not yet through a full CI build.
-- 2026-10-15: GUI2 (LVGL) pipeline verified on device end-to-end. Display fix:
-  `vendor.display.enable_spr=1` in system.prop — twrpminui programs
-  SDE_SPR_INIT_CFG from it; without it the panel scans out with B/R swapped
-  (blue renders pink) while screenshots stay correct. Official image: tag
-  `2026-10-14-38625219337`. Multi-device: push to a `device-<codename>`
-  branch to build that device (see `device-zorn`).
+- 2026-10-17: first assembly — not yet through a CI build, **untested on hardware**
+  (no device on hand).
+- On-device checklist for testers (see `PORTING.md` section 4): colour order (real
+  screen, not screenshots), touch, vibration, decryption, MTP, OTG, slot menu,
+  screenshot/recording, fastbootd. Collect `/sdcard/recovery.log` plus a photo.
+- Known unknowns: weaver backend (`ro.twrp.weaver=nxp` is a guess; see
+  `recovery/root/odm/bin/variant-script.sh`), haptics tuning values, SPR bypass.

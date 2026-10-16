@@ -1,11 +1,11 @@
 #!/system/bin/sh
 #=================================================
-# Auto-set device properties based on hardware SKU
+# Device identity + service handoff (vermeer)
 #=================================================
 set -e
 
-variant=$(getprop ro.boot.hardware.sku)
-base_name="Xiaomi"
+variant="vermeer"
+model="Redmi K70"
 log_file="/tmp/recovery.log"
 
 log() {
@@ -25,108 +25,12 @@ set_vibrator_props() {
     resetprop ro.vendor.mm.vibrator.sys_path "/sys/class/qcom-haptics"
 }
 
-#-------------------------------------------------
-# Variant-specific configuration
-#-------------------------------------------------
-case "$variant" in
-"pudding")
-    model="$base_name 17"
-    resetprop ro.twrp.device_version "Xiaomi_17"
-    resetprop ro.twrp.y_offset "116"
-    resetprop ro.twrp.h_offset "-116"
-    resetprop vendor.display.enable_spr "1"
-    resetprop ro.twrp.weaver "thales"
-    set_vibrator_props "170" "35" "/sys/class/qcom-haptics" "ff"
-    ;;
+# Tuning mirrors the manet branch defaults; adjust here if feedback differs.
+resetprop ro.twrp.device_version "Redmi_K70"
+resetprop ro.twrp.weaver "nxp"
+set_vibrator_props "170" "35" "/sys/class/qcom-haptics" "ff"
 
-"pandora")
-    model="$base_name 17 Pro"
-    resetprop ro.twrp.device_version "Xiaomi_17_Pro"
-    resetprop ro.twrp.y_offset "116"
-    resetprop ro.twrp.h_offset "-116"
-    resetprop vendor.display.enable_spr "1"
-    resetprop vendor.display.enable_spr_bypass "0"
-    resetprop ro.twrp.weaver "nxp"
-    set_vibrator_props "170" "35" "/sys/class/qcom-haptics" "ff"
-    ;;
-
-"popsicle")
-    model="$base_name 17 Pro Max"
-    resetprop ro.twrp.device_version "Xiaomi_17_Pro_Max"
-    resetprop ro.twrp.y_offset "116"
-    resetprop ro.twrp.h_offset "-116"
-    resetprop ro.odm.mm.vibrator.cirrus "true"
-    resetprop vendor.display.enable_spr "1"
-    resetprop vendor.display.enable_spr_bypass "1"
-    resetprop ro.twrp.weaver "nxp"
-    set_vibrator_props "130" "20" "/sys/bus/i2c/drivers/cs40l26/13-0043" "ff"
-    ;;
-
-"nezha")
-    model="$base_name 17 Ultra"
-    resetprop ro.twrp.device_version "Xiaomi_17_Ultra"
-    resetprop ro.twrp.y_offset "116"
-    resetprop ro.twrp.h_offset "-116"
-    resetprop vendor.display.enable_spr "1"
-    resetprop vendor.display.enable_spr_bypass "1"
-    resetprop ro.twrp.weaver "goodix"
-    set_vibrator_props "170" "20" "/sys/class/qcom-haptics" "ff"
-    ;;
-
-"byron")
-    model="$base_name 17 Max"
-    resetprop ro.twrp.device_version "Xiaomi_17_Max"
-    resetprop ro.twrp.y_offset "116"
-    resetprop ro.twrp.h_offset "-116"
-    resetprop vendor.display.enable_spr "1"
-    resetprop vendor.display.enable_spr_bypass "1"
-    resetprop ro.twrp.weaver "nxp"
-    set_vibrator_props "170" "35" "/sys/class/qcom-haptics" "ff"
-    ;;
-
-"myron")
-    model="REDMI K90 Pro Max"
-    resetprop ro.twrp.device_version "REDMI_K90_Pro_Max"
-    resetprop vendor.display.enable_spr "1"
-    resetprop vendor.display.enable_spr_bypass "1"
-    resetprop ro.twrp.weaver "nxp"
-    set_vibrator_props "170" "35" "/sys/class/qcom-haptics" "ff"
-    ;;
-
-"athens")
-    model="REDMI K100 Pro"
-    resetprop ro.twrp.device_version "REDMI_K100_Pro"
-    resetprop vendor.display.enable_spr "1"
-    resetprop vendor.display.enable_spr_bypass "1"
-    resetprop ro.twrp.weaver "nxp"
-    set_vibrator_props "170" "35" "/sys/class/qcom-haptics" "ff"
-    ;;
-
-"songyuan")
-    model="REDMI K100 Pro Max"
-    resetprop ro.twrp.device_version "REDMI_K100_Pro_Max"
-    resetprop vendor.display.enable_spr "1"
-    resetprop vendor.display.enable_spr_bypass "1"
-    resetprop ro.twrp.weaver "thales"
-    set_vibrator_props "170" "35" "/sys/class/qcom-haptics" "ff"
-    ;;
-
-*)
-    #-----------------------------------------
-    # Default configuration
-    #-----------------------------------------
-    log "Unknown variant: $variant, applying default configuration (manet)"
-    variant="manet"
-    model="Redmi K70 Pro"
-    resetprop ro.twrp.device_version "Redmi_K70_Pro-A17"
-    resetprop ro.twrp.weaver "nxp"
-    set_vibrator_props "170" "35" "/sys/class/qcom-haptics" "ff"
-    ;;
-esac
-
-#-------------------------------------------------
-# Common configuration
-#-------------------------------------------------
+# Shown as the USB gadget product string while in recovery.
 echo "$model" >/config/usb_gadget/g1/strings/0x409/product
 resetprop vendor.usb.product_string "$model"
 mkdir -p /usbotg
@@ -169,20 +73,12 @@ for prop in "${model_props[@]}"; do
 done
 
 #-------------------------------------------------
-# Copy variant-specific files
+# Hand off to the recovery services
 #-------------------------------------------------
-# set -e is on, so an unknown SKU with no overlay would abort the script here
-# and never raise files_copied, leaving weaver, haptics and touch unstarted.
-if [ -d "/odm/variant/$variant/odm" ]; then
-    cp -rf /odm/variant/$variant/odm/* /odm
-    chmod -R 755 /odm/bin/*
-else
-    log "No overlay for $variant, keeping the base odm"
-fi
+# No SKU overlays on vermeer: the base odm payload is already the right one.
+# This prop is what init.recovery.qcom.rc waits for before starting the
+# weaver / haptics / touch services.
 setprop twrp.variant.files_copied "1"
 
-#-------------------------------------------------
-# Done
-#-------------------------------------------------
 log "Applied variant props for: $model ($variant)"
 exit 0

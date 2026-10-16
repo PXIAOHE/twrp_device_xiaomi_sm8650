@@ -5,4 +5,4 @@
 #
 
 PRODUCT_MAKEFILES := \
-    $(LOCAL_DIR)/twrp_manet.mk
+    $(LOCAL_DIR)/twrp_vermeer.mk

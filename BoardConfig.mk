@@ -19,14 +19,14 @@ TARGET_CPU_ABI2 :=
 TARGET_CPU_VARIANT := generic
 
 # Bootloader
-PRODUCT_PLATFORM := pineapple
+PRODUCT_PLATFORM := kalama
 TARGET_BOOTLOADER_BOARD_NAME := $(PRODUCT_PLATFORM)
 TARGET_NO_BOOTLOADER := true
 
 # Platform
-TARGET_BOARD_PLATFORM := xiaomi_sm8650
-TARGET_BOARD_PLATFORM_GPU := qcom-adreno750
-QCOM_BOARD_PLATFORMS += xiaomi_sm8650
+TARGET_BOARD_PLATFORM := xiaomi_sm8550
+TARGET_BOARD_PLATFORM_GPU := qcom-adreno740
+QCOM_BOARD_PLATFORMS += xiaomi_sm8550
 
 # Kernel
 BOARD_KERNEL_IMAGE_NAME       := Image
@@ -77,9 +77,9 @@ BOARD_VENDOR_DLKMIMAGE_FILE_SYSTEM_TYPE := ext4
 BOARD_RECOVERYIMAGE_PARTITION_SIZE := 104857600
 
 # Dynamic Partition
-BOARD_SUPER_PARTITION_SIZE := 9126805504
+BOARD_SUPER_PARTITION_SIZE := 9663676416
 BOARD_SUPER_PARTITION_GROUPS := qti_dynamic_partitions
-BOARD_QTI_DYNAMIC_PARTITIONS_SIZE := $(shell echo $$(($(BOARD_SUPER_PARTITION_SIZE) - 10485760)))
+BOARD_QTI_DYNAMIC_PARTITIONS_SIZE := 9659482112 # (BOARD_SUPER_PARTITION_SIZE - 4 MiB)
 BOARD_QTI_DYNAMIC_PARTITIONS_PARTITION_LIST := system system_ext product vendor vendor_dlkm odm system_dlkm
 
 # System as root
@@ -143,13 +143,14 @@ TW_INPUT_BLACKLIST := "hbtp_vm"
 TW_BRIGHTNESS_PATH := "/sys/class/backlight/panel0-backlight/brightness"
 TW_MAX_BRIGHTNESS := 2047
 TW_EXTRA_LANGUAGES := true
-TW_DEFAULT_BRIGHTNESS := 250
+TW_DEFAULT_BRIGHTNESS := 200
 TW_EXCLUDE_APEX := true
 TW_STATUS_ICONS_ALIGN := center
 TW_SUPPORT_INPUT_AIDL_HAPTICS := true
 TW_SUPPORT_INPUT_AIDL_HAPTICS_FIX_OFF := true
 TW_USE_SERIALNO_PROPERTY_FOR_DEVICE_ID := true
-TW_LOAD_VENDOR_MODULES := "adsp_loader_dlkm.ko goodix_core.ko nxp-nci.ko stm_st54se_gpio.ko stm_nfc_i2c.ko qcom-hv-haptics.ko"
+# K70 (vermeer): goodix touch, qcom PMIC haptics and charger readout at boot.
+TW_LOAD_VENDOR_MODULES := "adsp_loader_dlkm.ko goodix_core.ko qcom-hv-haptics.ko qti_battery_charger.ko"
 TW_LOAD_VENDOR_MODULES_EXCLUDE_GKI := true
-TW_CUSTOM_CPU_TEMP_PATH := "/sys/class/thermal/thermal_zone25/temp" # CPU-0-0-0
+TW_CUSTOM_CPU_TEMP_PATH := "/sys/class/thermal/thermal_zone35/temp"
 TW_BACKUP_EXCLUSIONS := /data/fonts,/data/adb/ap,/data/adb/ksu

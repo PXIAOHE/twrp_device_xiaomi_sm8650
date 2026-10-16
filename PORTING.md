@@ -1,6 +1,6 @@
-# Porting this tree to another Xiaomi SM8650 device (pineapple)
+# Porting this tree to another Xiaomi device (manet / zorn / vermeer lineage)
 
-Distilled from the manet (K70 Pro) and zorn (K80) bring-ups.
+Distilled from the manet (K70 Pro) and zorn (K80) bring-ups; vermeer (K70) follows the same recipe.
 
 ## 0. Layout
 

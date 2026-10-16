@@ -1,0 +1,17 @@
+#
+# Copyright (C) 2026 The Android Open Source Project
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+DEVICE_PATH := device/xiaomi/vermeer
+
+# Inherit from device.mk configuration
+$(call inherit-product, $(DEVICE_PATH)/device.mk)
+
+## Device identifier
+PRODUCT_DEVICE := vermeer
+PRODUCT_NAME := twrp_vermeer
+PRODUCT_BRAND := Xiaomi
+PRODUCT_MODEL := Redmi K70
+PRODUCT_MANUFACTURER := Xiaomi
