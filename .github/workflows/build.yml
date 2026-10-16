@@ -35,6 +35,10 @@ on:
         description: "Build partition"
         required: true
         default: "recovery"
+      RECOVERY_FORK_REF:
+        description: "lingqiqi5211 recovery fork ref (branch/tag, default taro-lvgl)"
+        required: false
+        default: "taro-lvgl"
   push:
     branches: [ main, 'device-*' ]
     paths-ignore:
@@ -53,6 +57,7 @@ env:
   DEVICE_NAME: ${{ github.event.inputs.DEVICE_NAME || 'manet' }}
   LUNCH_TARGET: ${{ github.event.inputs.LUNCH_TARGET || github.event.inputs.DEVICE_NAME || 'manet' }}
   BUILD_PARTITION: ${{ github.event.inputs.BUILD_PARTITION || 'recovery' }}
+  RECOVERY_FORK_REF: ${{ github.event.inputs.RECOVERY_FORK_REF || 'taro-lvgl' }}
 
 jobs:
   build:
@@ -136,10 +141,11 @@ jobs:
     - name: Fetch GUI2 (LVGL) sources
       run: |
         set -e
-        echo "--- replacing bootable/recovery with the GUI2 (LVGL) branch ---"
+        echo "--- replacing bootable/recovery with the GUI2 fork ($RECOVERY_FORK_REF) ---"
         rm -rf bootable/recovery
-        git clone --depth=1 -b lvgl https://github.com/lingqiqi5211/android_bootable_recovery bootable/recovery
-        echo "recovery: $(git -C bootable/recovery log --oneline -1)"
+        git clone --depth=1 -b "$RECOVERY_FORK_REF" https://github.com/lingqiqi5211/android_bootable_recovery bootable/recovery
+        echo "recovery fork [$RECOVERY_FORK_REF]: $(git -C bootable/recovery log --oneline -1)"
+        echo "recovery fork sha: $(git -C bootable/recovery rev-parse HEAD)"
         echo "--- adding GUI2 dependency projects ---"
         git clone --depth=1 https://github.com/TWRP-Test/android_external_lvgl external/lvgl
         git clone --depth=1 https://github.com/TWRP-Test/android_external_libvpx external/libvpx
