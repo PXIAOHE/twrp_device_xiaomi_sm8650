@@ -19,7 +19,6 @@ These patches are applied by CI **after** fetching the recovery fork
 | Patch | Purpose | Base |
 |---|---|---|
 | `gui2_auto_decrypt.patch` | Saved lock password: General-Settings switch, OTG key (`/usb_otg*/TWRP/`), device-bound AES-256-CBC storage in `/persist/TWRP/.twrp_crypto_pwd`; failure self-clears. 8 files. | taro-lvgl@3b77055 |
-| `zz_diag_probe.patch` | **Temporary** startup diagnostic probe (traces PARTITIONS/STORAGE chain to `/persist/twrp_diag.log`). Remove after the first-boot-hang investigation closes. | taro-lvgl@3b77055 |
 
 ## Syncing to a newer upstream
 
