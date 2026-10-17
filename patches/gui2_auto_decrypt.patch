@@ -1,8 +1,8 @@
 diff --git a/gui2/backend/twrp_decrypt_backend.cpp b/gui2/backend/twrp_decrypt_backend.cpp
-index dac2546..bcf8902 100644
+index dac2546..336925f 100644
 --- a/gui2/backend/twrp_decrypt_backend.cpp
 +++ b/gui2/backend/twrp_decrypt_backend.cpp
-@@ -1,10 +1,18 @@
+@@ -1,10 +1,19 @@
  #include "twrp_decrypt_backend.h"
  
 +#include <openssl/evp.h>
@@ -13,6 +13,7 @@ index dac2546..bcf8902 100644
 +#include <sys/system_properties.h>
  #include <unistd.h>
  
++#include <cerrno>
 +#include <cstdint>
 +#include <cstdio>
  #include <cstdlib>
@@ -21,7 +22,7 @@ index dac2546..bcf8902 100644
  
  #include "data.hpp"
  #include "partitions.hpp"
-@@ -120,6 +128,12 @@ void twrp_decrypt_backend::run(std::string password) {
+@@ -120,6 +129,12 @@ void twrp_decrypt_backend::run(std::string password) {
        op_status = 1;
      else {
        DataManager::SetValue(TW_IS_ENCRYPTED, 0);
@@ -34,7 +35,7 @@ index dac2546..bcf8902 100644
        DataManager::SetBackupFolder();
  
        int has_datamedia;
-@@ -159,4 +173,250 @@ void twrp_decrypt_backend::acknowledge() {
+@@ -159,4 +174,266 @@ void twrp_decrypt_backend::acknowledge() {
    if (state_ != decrypt_state::RUNNING) state_ = decrypt_state::IDLE;
  }
  
@@ -236,7 +237,15 @@ index dac2546..bcf8902 100644
 +
 +}  // namespace
 +
-+std::string load_saved_crypto_password() { return load_password_file(kSavedPasswordPath); }
++std::string load_saved_crypto_password() {
++  struct stat st {};
++  const bool exists = stat(kSavedPasswordPath, &st) == 0;
++  LOGINFO("saved-password: load %s exists=%d size=%ld\n", kSavedPasswordPath,
++          exists ? 1 : 0, exists ? static_cast<long>(st.st_size) : -1L);
++  std::string password = load_password_file(kSavedPasswordPath);
++  LOGINFO("saved-password: load result len=%zu\n", password.size());
++  return password;
++}
 +
 +void store_saved_crypto_password(const std::string& password) {
 +  if (password.empty() || password.size() > kMaxSavedPassword) return;
@@ -244,16 +253,24 @@ index dac2546..bcf8902 100644
 +  if (!aes_encrypt_password(password, file)) return;
 +  // The folder normally exists already (the settings file lives there);
 +  // EEXIST is fine, anything else just means the write below fails too.
-+  mkdir(TW_PERSIST_DIR, 0777);
++  if (mkdir(TW_PERSIST_DIR, 0777) != 0 && errno != EEXIST)
++    LOGINFO("saved-password: mkdir %s failed (errno=%d)\n", TW_PERSIST_DIR, errno);
 +  FILE* out = fopen(kSavedPasswordPath, "wb");
-+  if (out == nullptr) return;
++  if (out == nullptr) {
++    LOGINFO("saved-password: open %s for write failed (errno=%d)\n",
++            kSavedPasswordPath, errno);
++    return;
++  }
 +  const size_t written = fwrite(file.data(), 1, file.size(), out);
 +  fclose(out);
 +  if (written != file.size()) {
++    LOGINFO("saved-password: short write %zu/%zu to %s\n", written, file.size(),
++            kSavedPasswordPath);
 +    remove(kSavedPasswordPath);
 +    return;
 +  }
 +  chmod(kSavedPasswordPath, 0600);
++  LOGINFO("saved-password: stored %zu bytes to %s\n", written, kSavedPasswordPath);
 +}
 +
 +void clear_saved_crypto_password() { remove(kSavedPasswordPath); }
@@ -309,7 +326,7 @@ index 073f2dd..3ee6759 100644
  
  #endif  // GUI2_BACKEND_TWRP_DECRYPT_BACKEND_H
 diff --git a/gui2/gui2.cpp b/gui2/gui2.cpp
-index 2affbdf..7787914 100644
+index 2affbdf..4290236 100644
 --- a/gui2/gui2.cpp
 +++ b/gui2/gui2.cpp
 @@ -15,6 +15,7 @@
@@ -364,20 +381,21 @@ index 2affbdf..7787914 100644
      page_state.decrypt_during_startup = true;
      startup->finish_decrypt();
      return;
-@@ -3749,8 +3766,20 @@ static void refresh_decrypt_progress(void) {
+@@ -3749,8 +3766,21 @@ static void refresh_decrypt_progress(void) {
    page_state.decrypt_refreshing = false;
    if (refreshing || state == gui2_backend::decrypt_state::DONE) {
      page_state.decrypt_failed = false;
 +    page_state.decrypt_used_saved = false;
 +    page_state.decrypt_saved_from_otg = false;
++    page_state.decrypt_saved_failures = 0;
      navigate_to(page_kind::HOME, nullptr, page_transition::FADE);
    } else {
 +    if (page_state.decrypt_used_saved) {
-+      // The saved password no longer works (for example the lock password
-+      // changed in the system); drop the device copy so the user is asked
-+      // once instead of on every boot. A copy on a USB stick is the user's
-+      // own file and is left in place.
-+      if (!page_state.decrypt_saved_from_otg)
++      // A single failure is usually the TEE not being ready yet during early
++      // startup, so keep the file and let the user try the prompt. Only after
++      // repeated failures is the saved copy considered stale.
++      page_state.decrypt_saved_failures++;
++      if (page_state.decrypt_saved_failures >= 3 && !page_state.decrypt_saved_from_otg)
 +        gui2_backend::clear_saved_crypto_password();
 +      page_state.decrypt_used_saved = false;
 +      page_state.decrypt_saved_from_otg = false;
@@ -385,18 +403,30 @@ index 2affbdf..7787914 100644
      page_state.decrypt_failed = true;
      navigate_to(page_kind::DECRYPT, nullptr, page_transition::POP);
    }
-@@ -3822,6 +3851,26 @@ static void enter_decrypt_flow(page_transition transition) {
+@@ -3822,6 +3852,9 @@ static void enter_decrypt_flow(page_transition transition) {
      navigate_to(page_kind::DECRYPT_PROGRESS, nullptr, transition);
      return;
    }
-+  // A password saved by an earlier successful unlock is tried before asking;
-+  // the device copy is gated by the General Settings switch, while a copy on a
-+  // USB stick is always a key the user placed.
-+  if (!page_state.decrypt_failed) {
++  // The saved-password attempt lives in show_decrypt_page(): this function is
++  // only reached from the manual "Decrypt Data" button, while startup gets to
++  // the decrypt page through enter_startup_pause().
+   navigate_to(page_kind::DECRYPT, nullptr, transition);
+ }
+ 
+@@ -5094,6 +5127,33 @@ static void show_mount_page(page_transition transition) {
+ }
+ 
+ static void show_decrypt_page(page_transition transition) {
++  // Startup (enter_startup_pause) and the manual button both land here, so this
++  // is the one place that runs on both paths. A saved password is tried before
++  // the page is built; a failure falls through to the normal prompt.
++  if (decrypt != nullptr && decrypt->is_encrypted() &&
++      decrypt->kind() != gui2_backend::lock_kind::DEFAULT &&
++      !page_state.decrypt_failed && !page_state.decrypt_used_saved) {
 +    const bool remember_on =
 +        settings == nullptr || settings->get_int(kRememberPasswordKey, 1) != 0;
-+    std::string saved =
-+        remember_on ? gui2_backend::load_saved_crypto_password() : std::string();
++    std::string saved = remember_on
++        ? gui2_backend::load_saved_crypto_password() : std::string();
 +    bool from_otg = false;
 +    if (saved.empty()) {
 +      saved = gui2_backend::load_otg_crypto_password();
@@ -406,12 +436,17 @@ index 2affbdf..7787914 100644
 +      page_state.decrypt_used_saved = true;
 +      page_state.decrypt_saved_from_otg = from_otg;
 +      decrypt_attempt(saved);
-+      return;
++      // start() can refuse before navigating (no selectable user); fall through
++      // to the prompt instead of leaving the screen blank.
++      if (page_router.current() == page_kind::DECRYPT_PROGRESS) return;
++      page_state.decrypt_used_saved = false;
++      page_state.decrypt_saved_from_otg = false;
 +    }
 +  }
-   navigate_to(page_kind::DECRYPT, nullptr, transition);
- }
- 
++
+   const int bottom_reserved = ui.nav_height + single_line_card_height() + ui.cards_top_gap * 2;
+   create_page_scaffold(page_kind::DECRYPT, false, strings().decrypt_title,
+                        "", bottom_reserved, transition);
 diff --git a/gui2/i18n/en.cpp b/gui2/i18n/en.cpp
 index d0fe8e5..3465d50 100644
 --- a/gui2/i18n/en.cpp
@@ -465,17 +500,20 @@ index 37da3c6..54607c2 100644
    "安裝刷機包前略過摘要驗證",
    "安裝完成後自動重新啟動",
 diff --git a/gui2/pages/page_state.h b/gui2/pages/page_state.h
-index 9303c1e..31b88f3 100644
+index 9303c1e..25578eb 100644
 --- a/gui2/pages/page_state.h
 +++ b/gui2/pages/page_state.h
-@@ -178,6 +178,10 @@ struct page_state {
+@@ -178,6 +178,13 @@ struct page_state {
    uint64_t decrypt_last_poll_ms = 0;
    uint64_t progress_settled_ms = 0;
    bool decrypt_refreshing = false;
-+  // The running attempt uses the saved password; a failure clears the file.
++  // The running attempt uses the saved password; repeated failures clear the
++  // file, a single one does not (the TEE may simply not be ready yet).
 +  bool decrypt_used_saved = false;
 +  // That saved copy lives on a USB stick; a failure leaves it alone.
 +  bool decrypt_saved_from_otg = false;
++  // Consecutive failures of the saved password, reset on a successful unlock.
++  int decrypt_saved_failures = 0;
    // The attempt ran during startup's decrypt pause; the page stays until
    // startup finishes.
    bool decrypt_during_startup = false;
