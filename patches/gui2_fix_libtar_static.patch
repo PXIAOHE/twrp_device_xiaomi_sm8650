@@ -1,13 +1,20 @@
 diff --git a/Android.bp b/Android.bp
-index 55ce825..a1e6785 100644
+index 55ce825..fa635fc 100644
 --- a/Android.bp
 +++ b/Android.bp
-@@ -566,7 +566,7 @@ cc_binary {
+@@ -525,6 +525,7 @@ cc_binary {
+         "libwebm_mkvmuxer",
+         "liblvgl_twrp",
+         "libtwrpperf",
++        "libtar_static",
+         "libmounts",
+         "libotautil",
+         "libsparse",
+@@ -566,7 +567,6 @@ cc_binary {
          "libc",
          "libcutils",
          "libstdc++",
 -        "libtar",
-+        "libtar_static",
          "libblkid",
          "libtwrpminui",
          "libbootloader_message",
