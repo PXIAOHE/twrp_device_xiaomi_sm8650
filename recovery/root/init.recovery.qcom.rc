@@ -58,6 +58,9 @@ on boot
 
 
 on property:twrp.modules.loaded=true
+    # TEE modules (qseecom_proxy etc.) are only loaded by TWRP now; bring
+    # qseecomd back up so it opens a /dev/qseecom that actually exists.
+    restart vendor.qseecomd
     # Mount firmware
     mkdir /firmware
     mount vfat /dev/block/bootdevice/by-name/modem${ro.boot.slot_suffix} /firmware ro
