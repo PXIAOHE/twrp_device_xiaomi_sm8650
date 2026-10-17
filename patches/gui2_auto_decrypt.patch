@@ -1,8 +1,8 @@
 diff --git a/gui2/backend/twrp_decrypt_backend.cpp b/gui2/backend/twrp_decrypt_backend.cpp
-index dac2546..9c15baf 100644
+index dac2546..bcf8902 100644
 --- a/gui2/backend/twrp_decrypt_backend.cpp
 +++ b/gui2/backend/twrp_decrypt_backend.cpp
-@@ -1,10 +1,17 @@
+@@ -1,10 +1,18 @@
  #include "twrp_decrypt_backend.h"
  
 +#include <openssl/evp.h>
@@ -10,6 +10,7 @@ index dac2546..9c15baf 100644
  #include <utility>
  
 +#include <sys/stat.h>
++#include <sys/system_properties.h>
  #include <unistd.h>
  
 +#include <cstdint>
@@ -20,7 +21,7 @@ index dac2546..9c15baf 100644
  
  #include "data.hpp"
  #include "partitions.hpp"
-@@ -120,6 +127,12 @@ void twrp_decrypt_backend::run(std::string password) {
+@@ -120,6 +128,12 @@ void twrp_decrypt_backend::run(std::string password) {
        op_status = 1;
      else {
        DataManager::SetValue(TW_IS_ENCRYPTED, 0);
@@ -33,7 +34,7 @@ index dac2546..9c15baf 100644
        DataManager::SetBackupFolder();
  
        int has_datamedia;
-@@ -159,4 +172,204 @@ void twrp_decrypt_backend::acknowledge() {
+@@ -159,4 +173,250 @@ void twrp_decrypt_backend::acknowledge() {
    if (state_ != decrypt_state::RUNNING) state_ = decrypt_state::IDLE;
  }
  
@@ -45,12 +46,30 @@ index dac2546..9c15baf 100644
 +constexpr const char* kSavedPasswordPath = TW_PERSIST_DIR "/.twrp_crypto_pwd";
 +constexpr size_t kMaxSavedPassword = 256;
 +constexpr size_t kMaxSavedFileSize = kMaxSavedPassword + 64;
-+// "TWG2" marks the device-bound AES format; files without it come from the
-+// earlier obfuscation scheme and are read once for compatibility.
++// "TWG2" is the original AES format: the key depended on whether the serial
++// happened to be readable at that moment. "TWG3" stores that fact in a flag
++// byte, so encrypt and decrypt always derive the same key. Files without
++// either magic come from the earlier obfuscation scheme (read once for
++// compatibility).
 +constexpr char kEncryptedMagic[4] = { 'T', 'W', 'G', '2' };
++constexpr char kBoundMagic[4] = { 'T', 'W', 'G', '3' };
++constexpr uint8_t kFlagDeviceBound = 0x01;
++constexpr size_t kMagicSize = sizeof(kEncryptedMagic);
++constexpr size_t kFlagSize = 1;
++constexpr size_t kIvSize = 16;
 +constexpr uint8_t kLegacyObfuscation = 0x5A;
 +
 +std::string read_device_secret() {
++  // The property is the reliable source: init derives it from bootconfig on
++  // Android 12+ and from the kernel cmdline before that, so it is available
++  // from the moment recovery starts and does not depend on which proc files
++  // happen to be readable.
++  char prop[PROP_VALUE_MAX] = {};
++  if (__system_property_get("ro.boot.serialno", prop) > 0 && prop[0] != '\0')
++    return std::string(prop);
++  prop[0] = '\0';
++  if (__system_property_get("ro.serialno", prop) > 0 && prop[0] != '\0')
++    return std::string(prop);
 +  FILE* cmdline = fopen("/proc/cmdline", "r");
 +  if (cmdline != nullptr) {
 +    char buffer[4096];
@@ -84,10 +103,10 @@ index dac2546..9c15baf 100644
 +// Device-bound key: the file only decrypts on the device that wrote it. The
 +// key is SHA256(salt || serial); when no serial can be read, the salt alone
 +// is used, which is weaker, so it is logged.
-+void derive_password_key(uint8_t key[32]) {
-+  const std::string secret = read_device_secret();
-+  if (secret.empty())
-+    LOGINFO("saved-password: no device serial found; the saved file is not device-bound\n");
++void derive_password_key(uint8_t key[32], bool use_serial) {
++  const std::string secret = use_serial ? read_device_secret() : std::string();
++  if (use_serial && secret.empty())
++    LOGINFO("saved-password: no device serial found; using the salt-only key\n");
 +  static const char salt[] = "TWRP GUI2 saved crypto password v2";
 +  EVP_MD_CTX* ctx = EVP_MD_CTX_new();
 +  if (ctx == nullptr) {
@@ -103,17 +122,22 @@ index dac2546..9c15baf 100644
 +}
 +
 +bool aes_encrypt_password(const std::string& plain, std::vector<uint8_t>& out) {
++  const std::string secret = read_device_secret();
++  const bool bound = !secret.empty();
 +  uint8_t key[32];
-+  derive_password_key(key);
++  derive_password_key(key, bound);
++  if (!bound)
++    LOGINFO("saved-password: no device serial; writing a salt-only (not device-bound) file\n");
 +  uint8_t iv[16];
 +  FILE* random = fopen("/dev/urandom", "rb");
 +  const size_t got = random == nullptr ? 0 : fread(iv, 1, sizeof(iv), random);
 +  if (random != nullptr) fclose(random);
 +  if (got != sizeof(iv)) memset(iv, 0, sizeof(iv));
 +
-+  out.assign(sizeof(kEncryptedMagic) + sizeof(iv), 0);
-+  memcpy(out.data(), kEncryptedMagic, sizeof(kEncryptedMagic));
-+  memcpy(out.data() + sizeof(kEncryptedMagic), iv, sizeof(iv));
++  out.assign(kMagicSize + kFlagSize + kIvSize, 0);
++  memcpy(out.data(), kBoundMagic, kMagicSize);
++  out[kMagicSize] = bound ? kFlagDeviceBound : 0;
++  memcpy(out.data() + kMagicSize + kFlagSize, iv, kIvSize);
 +
 +  std::vector<uint8_t> body(plain.size() + 16);
 +  int out_len = 0;
@@ -134,22 +158,19 @@ index dac2546..9c15baf 100644
 +  return true;
 +}
 +
-+bool aes_decrypt_password(const uint8_t* data, size_t size, std::string& plain) {
-+  const size_t header = sizeof(kEncryptedMagic) + 16;
-+  if (size < header + 16 || (size - header) % 16 != 0) return false;
-+  uint8_t key[32];
-+  derive_password_key(key);
++bool decrypt_with_key(const uint8_t* iv, const uint8_t* ciphertext, size_t ciphertext_size,
++                      const uint8_t key[32], std::string& plain) {
++  if (ciphertext_size == 0 || ciphertext_size % 16 != 0) return false;
 +  std::string out;
-+  out.resize(size - header + 16);
++  out.resize(ciphertext_size + 16);
 +  int out_len = 0;
 +  int final_len = 0;
 +  bool ok = false;
 +  EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
 +  if (ctx != nullptr) {
-+    ok = EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), nullptr, key,
-+                            data + sizeof(kEncryptedMagic)) != 0 &&
++    ok = EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), nullptr, key, iv) != 0 &&
 +         EVP_DecryptUpdate(ctx, reinterpret_cast<uint8_t*>(out.data()), &out_len,
-+                           data + header, static_cast<int>(size - header)) != 0 &&
++                           ciphertext, static_cast<int>(ciphertext_size)) != 0 &&
 +         EVP_DecryptFinal_ex(ctx, reinterpret_cast<uint8_t*>(out.data()) + out_len,
 +                             &final_len) != 0;
 +    EVP_CIPHER_CTX_free(ctx);
@@ -160,6 +181,31 @@ index dac2546..9c15baf 100644
 +  return true;
 +}
 +
++bool aes_decrypt_password(const uint8_t* data, size_t size, std::string& plain) {
++  uint8_t key[32];
++  if (size >= kMagicSize && memcmp(data, kBoundMagic, kMagicSize) == 0) {
++    // TWG3: the flag byte records how the key was derived at save time.
++    const size_t header = kMagicSize + kFlagSize + kIvSize;
++    if (size < header + 16) return false;
++    const bool bound = (data[kMagicSize] & kFlagDeviceBound) != 0;
++    derive_password_key(key, bound);
++    return decrypt_with_key(data + kMagicSize + kFlagSize, data + header, size - header,
++                            key, plain);
++  }
++  if (size >= kMagicSize && memcmp(data, kEncryptedMagic, kMagicSize) == 0) {
++    // TWG2: no flag byte. Try the device-bound derivation first, then the
++    // salt-only one that older images wrote when the serial was unreadable.
++    const size_t header = kMagicSize + kIvSize;
++    if (size < header + 16) return false;
++    derive_password_key(key, true);
++    if (decrypt_with_key(data + kMagicSize, data + header, size - header, key, plain))
++      return true;
++    derive_password_key(key, false);
++    return decrypt_with_key(data + kMagicSize, data + header, size - header, key, plain);
++  }
++  return false;
++}
++
 +std::string load_password_file(const std::string& path) {
 +  FILE* file = fopen(path.c_str(), "rb");
 +  if (file == nullptr) return std::string();
@@ -167,8 +213,9 @@ index dac2546..9c15baf 100644
 +  const size_t size = fread(raw, 1, sizeof(raw), file);
 +  fclose(file);
 +  if (size == 0) return std::string();
-+  if (size >= sizeof(kEncryptedMagic) &&
-+      memcmp(raw, kEncryptedMagic, sizeof(kEncryptedMagic)) == 0) {
++  if (size >= kMagicSize &&
++      (memcmp(raw, kEncryptedMagic, kMagicSize) == 0 ||
++       memcmp(raw, kBoundMagic, kMagicSize) == 0)) {
 +    std::string plain;
 +    if (!aes_decrypt_password(raw, size, plain)) {
 +      LOGINFO("saved-password: %s does not decrypt on this device\n", path.c_str());
