@@ -1,0 +1,58 @@
+[2026-10-17 07:26:01] monitor start for run 38981327428 (sm8750/sm8850 YARP lvgl(c6eedad) + slide + auto-decrypt (retry))
+[2026-10-17 07:26:02] poll#1 -> in_progress 
+[2026-10-17 07:29:04] poll#2 -> in_progress 
+[2026-10-17 07:32:04] poll#3 -> in_progress 
+[2026-10-17 07:35:05] poll#4 -> in_progress 
+[2026-10-17 07:38:06] poll#5 -> in_progress 
+[2026-10-17 07:41:07] poll#6 -> in_progress 
+[2026-10-17 07:44:08] poll#7 -> in_progress 
+[2026-10-17 07:47:10] poll#8 -> in_progress 
+[2026-10-17 07:50:12] poll#9 -> in_progress 
+[2026-10-17 07:53:13] poll#10 -> in_progress 
+[2026-10-17 07:56:14] poll#11 -> in_progress 
+[2026-10-17 07:59:15] poll#12 -> in_progress 
+[2026-10-17 08:02:16] poll#13 -> in_progress 
+[2026-10-17 08:05:17] poll#14 -> in_progress 
+[2026-10-17 08:08:18] poll#15 -> in_progress 
+[2026-10-17 08:11:19] poll#16 -> in_progress 
+[2026-10-17 08:14:20] poll#17 -> in_progress 
+[2026-10-17 08:17:21] poll#18 -> in_progress 
+[2026-10-17 08:20:23] poll#19 -> in_progress 
+[2026-10-17 08:23:24] poll#20 -> in_progress 
+[2026-10-17 08:26:25] poll#21 -> in_progress 
+[2026-10-17 08:29:26] poll#22 -> in_progress 
+[2026-10-17 08:32:28] poll#23 -> in_progress 
+[2026-10-17 08:35:29] poll#24 -> in_progress 
+[2026-10-17 08:38:30] poll#25 -> in_progress 
+[2026-10-17 08:41:31] poll#26 -> completed failure
+===== RUN COMPLETED =====
+result: completed failure
+job: build -> failure
+   Set up job                                     success
+   Resolve device from branch                     success
+   Show build info                                success
+   Cleanup                                        success
+   Maximize build space                           success
+   Setup ccache                                   success
+   Setup zram                                     success
+   Setup environment                              success
+   Sync source                                    success
+   Setup device                                   success
+   Fetch GUI2 (LVGL) sources                      success
+   Apply GUI2 patches                             success
+   Generate build info                            success
+   Build TWRP                                     failure
+   Verify theme overlay                           skipped
+   Publish logs to ci-logs branch                 success
+   Upload to Release                              skipped
+   Post Setup ccache                              success
+   Complete job                                   success
+===== ci-logs branch check =====
+ci-logs file: build.log 2141541
+ci-logs file: run-info.txt 118
+ci-logs file: sync.log 1162
+===== releases =====
+release: 2026-10-16-38976804750 | TWRP-3.7.1-16-vermeer-2026-10-16-38976804750
+   asset: TWRP-3.7.1-16-vermeer-2026-10-16.img 104857600 sha256:23dcbe469c056484e76a957820caeec2381c446164e96311fc8f8627ea3fac62
+release: 2026-10-16-38960342155 | TWRP-3.7.1-16-manet-2026-10-16-38960342155
+   asset: TWRP-3.7.1-16-manet-2026-10-16.img 104857600 sha256:063287c0ce1e230c1d354a2235db53a293ebbf82ed8650d61a6a4a27bf325685

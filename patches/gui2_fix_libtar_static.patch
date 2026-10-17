@@ -1,0 +1,13 @@
+diff --git a/Android.bp b/Android.bp
+index 55ce825..a1e6785 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -566,7 +566,7 @@ cc_binary {
+         "libc",
+         "libcutils",
+         "libstdc++",
+-        "libtar",
++        "libtar_static",
+         "libblkid",
+         "libtwrpminui",
+         "libbootloader_message",
