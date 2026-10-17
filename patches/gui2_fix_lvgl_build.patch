@@ -30,3 +30,29 @@ index c9489bf..c5c1b9c 100644
  RECOVERY_LIBRARY_SOURCE_FILES += $(TARGET_OUT_SHARED_LIBRARIES)/libtwrpdigest.so
  RECOVERY_LIBRARY_SOURCE_FILES += $(TARGET_OUT_SHARED_LIBRARIES)/libblkid.so
  RECOVERY_LIBRARY_SOURCE_FILES += $(TARGET_OUT_SHARED_LIBRARIES)/libfusesideload.so
+diff --git a/twrp_recovery_defaults.go b/twrp_recovery_defaults.go
+index f323841..ffe7b69 100644
+--- a/twrp_recovery_defaults.go
++++ b/twrp_recovery_defaults.go
+@@ -78,6 +78,21 @@ func globalFlags(ctx android.BaseContext) []string {
+         cflags = append(cflags, fmt.Sprintf("-DBOARD_BOOT_HEADER_VERSION=\"%s\"", makeVar))
+     }
+ 	
++    // Mainline twrp_flags.go supplies these three with fallbacks; lvgl's own
++    // defaults never did, so twrp.cpp (TW_GIT_REVISION), variables.h
++    // (TW_DEVICE_VERSION) and data.cpp (TW_DEFAULT_LANGUAGE) fail to compile.
++    for _, v := range []struct{ name, fallback string }{
++        {"TW_DEFAULT_LANGUAGE", "en"},
++        {"TW_DEVICE_VERSION", "-0"},
++        {"TW_GIT_REVISION", "unknown"},
++    } {
++        lit := getMakeVars(ctx, v.name)
++        if lit == "" {
++            lit = v.fallback
++        }
++        cflags = append(cflags, fmt.Sprintf("-D%s=\"%s\"", v.name, lit))
++    }
++
+     return cflags
+ }
+ 
