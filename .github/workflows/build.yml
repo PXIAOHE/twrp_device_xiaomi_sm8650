@@ -35,6 +35,10 @@ on:
         description: "Build partition"
         required: true
         default: "recovery"
+      RECOVERY_SOURCE:
+        description: "GUI2 来源：upstream（twrp-16.0 已含 LVGL #37）或 fork（lingqiqi5211 taro-lvgl）"
+        required: false
+        default: "upstream"
       RECOVERY_FORK_REF:
         description: "lingqiqi5211 recovery fork ref (branch/tag, default taro-lvgl)"
         required: false
@@ -61,6 +65,7 @@ env:
   DEVICE_NAME: ${{ github.event.inputs.DEVICE_NAME || 'manet' }}
   LUNCH_TARGET: ${{ github.event.inputs.LUNCH_TARGET || github.event.inputs.DEVICE_NAME || 'manet' }}
   BUILD_PARTITION: ${{ github.event.inputs.BUILD_PARTITION || 'recovery' }}
+  RECOVERY_SOURCE: ${{ github.event.inputs.RECOVERY_SOURCE || 'upstream' }}
   RECOVERY_FORK_REF: ${{ github.event.inputs.RECOVERY_FORK_REF || 'taro-lvgl' }}
   RECOVERY_FORK_SHA: ${{ github.event.inputs.RECOVERY_FORK_SHA || '3b77055e3e7e872e847dfde8d06aba7d772b3016' }}
 
@@ -146,22 +151,40 @@ jobs:
     - name: Fetch GUI2 (LVGL) sources
       run: |
         set -e
-        echo "--- replacing bootable/recovery with the GUI2 fork ($RECOVERY_FORK_REF) ---"
-        rm -rf bootable/recovery
-        git clone --single-branch -b "$RECOVERY_FORK_REF" https://github.com/lingqiqi5211/android_bootable_recovery bootable/recovery
-        if [ -n "$RECOVERY_FORK_SHA" ]; then
-          git -C bootable/recovery checkout --detach "$RECOVERY_FORK_SHA"
-          echo "pinned recovery fork to $RECOVERY_FORK_SHA"
+        # manifest 从 2026-10-23 起自带 external/lvgl、libvpx、libwebm（#4），
+        # 而且 bootable/recovery 已经是带 GUI2 的 TWRP-Test 版（#37）。
+        # 所以默认直接用上游；要回到我们自己的 fork 就设 RECOVERY_SOURCE=fork。
+        ensure_repo() {  # $1=path $2=url $3=branch
+          if [ -d "$1/.git" ]; then
+            echo "[skip] $1 已由 repo sync 提供: $(git -C "$1" log --oneline -1 2>/dev/null || echo no-git)"
+          else
+            rm -rf "$1"
+            git clone --depth=1 -b "$3" "$2" "$1"
+            echo "[clone] $1 <- $2 @$3 : $(git -C "$1" rev-parse --short HEAD)"
+          fi
+        }
+
+        if [ "$RECOVERY_SOURCE" = "fork" ]; then
+          echo "--- GUI2 来源：lingqiqi5211 fork ($RECOVERY_FORK_REF) ---"
+          rm -rf bootable/recovery
+          git clone --single-branch -b "$RECOVERY_FORK_REF" https://github.com/lingqiqi5211/android_bootable_recovery bootable/recovery
+          if [ -n "$RECOVERY_FORK_SHA" ]; then
+            git -C bootable/recovery checkout --detach "$RECOVERY_FORK_SHA"
+            echo "pinned recovery fork to $RECOVERY_FORK_SHA"
+          fi
+        else
+          echo "--- GUI2 来源：上游 twrp-16.0（已合并 GUI2/LVGL #37）---"
+          if [ ! -d bootable/recovery/.git ]; then
+            rm -rf bootable/recovery
+            git clone --depth=1 -b twrp-16.0 https://github.com/TWRP-Test/android_bootable_recovery bootable/recovery
+          fi
         fi
-        echo "recovery fork [$RECOVERY_FORK_REF]: $(git -C bootable/recovery log --oneline -1)"
-        echo "recovery fork sha: $(git -C bootable/recovery rev-parse HEAD)"
-        echo "--- adding GUI2 dependency projects ---"
-        git clone --depth=1 https://github.com/TWRP-Test/android_external_lvgl external/lvgl
-        git clone --depth=1 https://github.com/TWRP-Test/android_external_libvpx external/libvpx
-        git clone --depth=1 https://github.com/TWRP-Test/android_external_libwebm external/libwebm
-        echo "lvgl: $(git -C external/lvgl log --oneline -1)"
-        echo "libvpx: $(git -C external/libvpx log --oneline -1)"
-        echo "libwebm: $(git -C external/libwebm log --oneline -1)"
+        echo "recovery: $(git -C bootable/recovery rev-parse --short HEAD) $(git -C bootable/recovery log --oneline -1)"
+
+        echo "--- GUI2 依赖工程（manifest 已提供则以 manifest 为准）---"
+        ensure_repo external/lvgl    https://github.com/TWRP-Test/android_external_lvgl    twrp-16.0
+        ensure_repo external/libvpx  https://github.com/TWRP-Test/android_external_libvpx  twrp-16.0
+        ensure_repo external/libwebm https://github.com/TWRP-Test/android_external_libwebm twrp-16.0
 
     - name: Apply GUI2 patches
       run: |
