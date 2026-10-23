@@ -1,5 +1,5 @@
 diff --git a/gui2/backend/twrp_decrypt_backend.cpp b/gui2/backend/twrp_decrypt_backend.cpp
-index f20acec..eb7d9a6 100644
+index f20acec..dd311ec 100644
 --- a/gui2/backend/twrp_decrypt_backend.cpp
 +++ b/gui2/backend/twrp_decrypt_backend.cpp
 @@ -1,10 +1,17 @@
@@ -215,14 +215,14 @@ index f20acec..eb7d9a6 100644
 +// device never writes it, and it is left in place when it stops working.
 +std::string load_otg_crypto_password() {
 +  std::vector<PartitionList> list;
-+  PartitionManager.Get_Partition_List("mount", &list);
++  PartitionManager.GetPartitionList("mount", &list);
 +  for (const PartitionList& entry : list) {
-+    const std::string& point = entry.Mount_Point;
++    const std::string& point = entry.mount_point;
 +    if (point.rfind("/usbotg", 0) != 0 && point.rfind("/usb-otg", 0) != 0 &&
 +        point.rfind("/usb_otg", 0) != 0)
 +      continue;
-+    if (!PartitionManager.Is_Mounted_By_Path(point)) {
-+      if (!PartitionManager.Mount_By_Path(point, false)) {
++    if (!PartitionManager.IsMountedByPath(point)) {
++      if (!PartitionManager.MountByPath(point, false)) {
 +        LOGINFO("saved-password: could not mount %s\n", point.c_str());
 +        continue;
 +      }
