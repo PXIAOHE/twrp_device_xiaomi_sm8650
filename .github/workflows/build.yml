@@ -189,7 +189,15 @@ jobs:
     - name: Apply GUI2 patches
       run: |
         set -e
-        for p in "$GITHUB_WORKSPACE/device/$DEVICE_PATH/patches/"*.patch; do
+        # 按 RECOVERY_SOURCE 选补丁目录：upstream 与 fork 的 GUI2 代码不同，
+        # 同一份 patch 不可能两边都干净应用，所以分开维护。
+        PATCH_DIR="$GITHUB_WORKSPACE/device/$DEVICE_PATH/patches/$RECOVERY_SOURCE"
+        if [ ! -d "$PATCH_DIR" ]; then
+          echo "没有 patches/$RECOVERY_SOURCE/，回落到 patches/*.patch"
+          PATCH_DIR="$GITHUB_WORKSPACE/device/$DEVICE_PATH/patches"
+        fi
+        echo "补丁目录: $PATCH_DIR"
+        for p in "$PATCH_DIR"/*.patch; do
           [ -e "$p" ] || continue
           echo "--- applying $p ---"
           if git -C bootable/recovery apply --check "$p" 2>/dev/null; then

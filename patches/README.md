@@ -1,28 +1,10 @@
-# Device-tree patches for the GUI2 recovery fork
+# patches/
 
-These patches are applied by CI **after** fetching the recovery fork
-(`lingqiqi5211/android_bootable_recovery`, branch `taro-lvgl`, pinned by
-`RECOVERY_FORK_SHA` in `.github/workflows/build.yml`).
+按 GUI2 来源分两个目录，CI 按 `RECOVERY_SOURCE` 自动选：
 
-## Rules
+| 目录 | 用在 | 基线 |
+| :--- | :--- | :--- |
+| `upstream/` | `RECOVERY_SOURCE=upstream`（默认） | TWRP-Test `android_bootable_recovery` `twrp-16.0`（2026-10-23 起自带 GUI2/LVGL #37） |
+| `fork/` | `RECOVERY_SOURCE=fork` | lingqiqi5211 `android_bootable_recovery`，manet 用 `taro-lvgl@3b77055` |
 
-- Files are applied in **glob (lexicographic) order** — prefix new patches so
-  the order stays obvious.
-- Each patch is **one self-contained feature** so that a conflict in one can be
-  fixed (or temporarily skipped) without touching the others.
-- The CI first tries a clean `git apply`; if the pinned upstream commit has
-  moved past the patch base, it retries with `git apply -3` (3-way merge).
-  A conflict that survives both is a hard failure with the diff in the log.
-
-## Current patches
-
-| Patch | Purpose | Base |
-|---|---|---|
-| `gui2_auto_decrypt.patch` | Saved lock password: General-Settings switch, OTG key (`/usb_otg*/TWRP/`), device-bound AES-256-CBC storage in `/persist/TWRP/.twrp_crypto_pwd`; failure self-clears. 8 files. | taro-lvgl@3b77055 |
-
-## Syncing to a newer upstream
-
-1. Pick the new `taro-lvgl` commit, update `RECOVERY_FORK_SHA` (one line).
-2. Rebuild. If the apply step fails with a real conflict, replay the failing
-   hunk by hand (patches were generated from anchor-based edits, so the
-   changes are small and localized), regenerate the patch, and push.
+两边代码不同，同一份 patch 不可能同时干净应用，所以分开存。
