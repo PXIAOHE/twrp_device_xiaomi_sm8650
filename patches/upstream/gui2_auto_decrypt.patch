@@ -1,0 +1,524 @@
+diff --git a/gui2/backend/twrp_decrypt_backend.cpp b/gui2/backend/twrp_decrypt_backend.cpp
+index f20acec..6704c4c 100644
+--- a/gui2/backend/twrp_decrypt_backend.cpp
++++ b/gui2/backend/twrp_decrypt_backend.cpp
+@@ -1,10 +1,19 @@
+ #include "twrp_decrypt_backend.h"
+ 
++#include <openssl/evp.h>
++
+ #include <utility>
+ 
++#include <sys/stat.h>
++#include <sys/system_properties.h>
+ #include <unistd.h>
+ 
++#include <cerrno>
++#include <cstdint>
++#include <cstdio>
+ #include <cstdlib>
++#include <cstring>
++#include <vector>
+ 
+ #include "data.hpp"
+ #include "partitions.hpp"
+@@ -120,6 +129,12 @@ void twrp_decrypt_backend::run(std::string password) {
+       op_status = 1;
+     else {
+       DataManager::SetValue(TW_IS_ENCRYPTED, 0);
++      // Remember what unlocked the partition so the next boot can skip the
++      // prompt; the General Settings switch can veto this, and the
++      // default-password sentinel is not a real secret.
++      if (!password.empty() && password != "!" &&
++          DataManager::GetStrValue("tw_gui2_remember_pwd") != "0")
++        store_saved_crypto_password(password);
+       DataManager::SetBackupFolder();
+       PartitionManager.AddMtpStorage("/data");
+ 
+@@ -160,4 +175,266 @@ void twrp_decrypt_backend::acknowledge() {
+   if (state_ != decrypt_state::RUNNING) state_ = decrypt_state::IDLE;
+ }
+ 
++namespace {
++
++// Persist lives on its own partition and is readable before /data unlocks,
++// which is the whole point: the next boot reads the password back before it
++// can mount anything that is encrypted.
++constexpr const char* kSavedPasswordPath = TW_PERSIST_DIR "/.twrp_crypto_pwd";
++constexpr size_t kMaxSavedPassword = 256;
++constexpr size_t kMaxSavedFileSize = kMaxSavedPassword + 64;
++// "TWG2" is the original AES format: the key depended on whether the serial
++// happened to be readable at that moment. "TWG3" stores that fact in a flag
++// byte, so encrypt and decrypt always derive the same key. Files without
++// either magic come from the earlier obfuscation scheme (read once for
++// compatibility).
++constexpr char kEncryptedMagic[4] = { 'T', 'W', 'G', '2' };
++constexpr char kBoundMagic[4] = { 'T', 'W', 'G', '3' };
++constexpr uint8_t kFlagDeviceBound = 0x01;
++constexpr size_t kMagicSize = sizeof(kEncryptedMagic);
++constexpr size_t kFlagSize = 1;
++constexpr size_t kIvSize = 16;
++constexpr uint8_t kLegacyObfuscation = 0x5A;
++
++std::string read_device_secret() {
++  // The property is the reliable source: init derives it from bootconfig on
++  // Android 12+ and from the kernel cmdline before that, so it is available
++  // from the moment recovery starts and does not depend on which proc files
++  // happen to be readable.
++  char prop[PROP_VALUE_MAX] = {};
++  if (__system_property_get("ro.boot.serialno", prop) > 0 && prop[0] != '\0')
++    return std::string(prop);
++  prop[0] = '\0';
++  if (__system_property_get("ro.serialno", prop) > 0 && prop[0] != '\0')
++    return std::string(prop);
++  FILE* cmdline = fopen("/proc/cmdline", "r");
++  if (cmdline != nullptr) {
++    char buffer[4096];
++    const size_t size = fread(buffer, 1, sizeof(buffer) - 1, cmdline);
++    fclose(cmdline);
++    buffer[size] = '\0';
++    const std::string line(buffer, size);
++    static const char key[] = "androidboot.serialno=";
++    const size_t pos = line.find(key);
++    if (pos != std::string::npos) {
++      const size_t start = pos + sizeof(key) - 1;
++      size_t end = line.find_first_of(" \n", start);
++      if (end == std::string::npos) end = line.size();
++      if (end > start) return line.substr(start, end - start);
++    }
++  }
++  FILE* dt = fopen("/proc/device-tree/serial-number", "rb");
++  if (dt != nullptr) {
++    char buffer[256];
++    const size_t size = fread(buffer, 1, sizeof(buffer) - 1, dt);
++    fclose(dt);
++    std::string serial(buffer, size);
++    while (!serial.empty() &&
++           (serial.back() == '\0' || serial.back() == '\n' || serial.back() == ' '))
++      serial.pop_back();
++    if (!serial.empty()) return serial;
++  }
++  return std::string();
++}
++
++// Device-bound key: the file only decrypts on the device that wrote it. The
++// key is SHA256(salt || serial); when no serial can be read, the salt alone
++// is used, which is weaker, so it is logged.
++void derive_password_key(uint8_t key[32], bool use_serial) {
++  const std::string secret = use_serial ? read_device_secret() : std::string();
++  if (use_serial && secret.empty())
++    LOGINFO("saved-password: no device serial found; using the salt-only key\n");
++  static const char salt[] = "TWRP GUI2 saved crypto password v2";
++  EVP_MD_CTX* ctx = EVP_MD_CTX_new();
++  if (ctx == nullptr) {
++    memset(key, 0, 32);
++    return;
++  }
++  EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr);
++  EVP_DigestUpdate(ctx, salt, sizeof(salt) - 1);
++  if (!secret.empty()) EVP_DigestUpdate(ctx, secret.data(), secret.size());
++  unsigned int length = 0;
++  EVP_DigestFinal_ex(ctx, key, &length);
++  EVP_MD_CTX_free(ctx);
++}
++
++bool aes_encrypt_password(const std::string& plain, std::vector<uint8_t>& out) {
++  const std::string secret = read_device_secret();
++  const bool bound = !secret.empty();
++  uint8_t key[32];
++  derive_password_key(key, bound);
++  if (!bound)
++    LOGINFO("saved-password: no device serial; writing a salt-only (not device-bound) file\n");
++  uint8_t iv[16];
++  FILE* random = fopen("/dev/urandom", "rb");
++  const size_t got = random == nullptr ? 0 : fread(iv, 1, sizeof(iv), random);
++  if (random != nullptr) fclose(random);
++  if (got != sizeof(iv)) memset(iv, 0, sizeof(iv));
++
++  out.assign(kMagicSize + kFlagSize + kIvSize, 0);
++  memcpy(out.data(), kBoundMagic, kMagicSize);
++  out[kMagicSize] = bound ? kFlagDeviceBound : 0;
++  memcpy(out.data() + kMagicSize + kFlagSize, iv, kIvSize);
++
++  std::vector<uint8_t> body(plain.size() + 16);
++  int out_len = 0;
++  int final_len = 0;
++  bool ok = false;
++  EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
++  if (ctx != nullptr) {
++    ok = EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), nullptr, key, iv) != 0 &&
++         EVP_EncryptUpdate(ctx, body.data(), &out_len,
++                           reinterpret_cast<const uint8_t*>(plain.data()),
++                           static_cast<int>(plain.size())) != 0 &&
++         EVP_EncryptFinal_ex(ctx, body.data() + out_len, &final_len) != 0;
++    EVP_CIPHER_CTX_free(ctx);
++  }
++  if (!ok) return false;
++  body.resize(static_cast<size_t>(out_len) + static_cast<size_t>(final_len));
++  out.insert(out.end(), body.begin(), body.end());
++  return true;
++}
++
++bool decrypt_with_key(const uint8_t* iv, const uint8_t* ciphertext, size_t ciphertext_size,
++                      const uint8_t key[32], std::string& plain) {
++  if (ciphertext_size == 0 || ciphertext_size % 16 != 0) return false;
++  std::string out;
++  out.resize(ciphertext_size + 16);
++  int out_len = 0;
++  int final_len = 0;
++  bool ok = false;
++  EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
++  if (ctx != nullptr) {
++    ok = EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), nullptr, key, iv) != 0 &&
++         EVP_DecryptUpdate(ctx, reinterpret_cast<uint8_t*>(out.data()), &out_len,
++                           ciphertext, static_cast<int>(ciphertext_size)) != 0 &&
++         EVP_DecryptFinal_ex(ctx, reinterpret_cast<uint8_t*>(out.data()) + out_len,
++                             &final_len) != 0;
++    EVP_CIPHER_CTX_free(ctx);
++  }
++  if (!ok) return false;
++  out.resize(static_cast<size_t>(out_len) + static_cast<size_t>(final_len));
++  plain.swap(out);
++  return true;
++}
++
++bool aes_decrypt_password(const uint8_t* data, size_t size, std::string& plain) {
++  uint8_t key[32];
++  if (size >= kMagicSize && memcmp(data, kBoundMagic, kMagicSize) == 0) {
++    // TWG3: the flag byte records how the key was derived at save time.
++    const size_t header = kMagicSize + kFlagSize + kIvSize;
++    if (size < header + 16) return false;
++    const bool bound = (data[kMagicSize] & kFlagDeviceBound) != 0;
++    derive_password_key(key, bound);
++    return decrypt_with_key(data + kMagicSize + kFlagSize, data + header, size - header,
++                            key, plain);
++  }
++  if (size >= kMagicSize && memcmp(data, kEncryptedMagic, kMagicSize) == 0) {
++    // TWG2: no flag byte. Try the device-bound derivation first, then the
++    // salt-only one that older images wrote when the serial was unreadable.
++    const size_t header = kMagicSize + kIvSize;
++    if (size < header + 16) return false;
++    derive_password_key(key, true);
++    if (decrypt_with_key(data + kMagicSize, data + header, size - header, key, plain))
++      return true;
++    derive_password_key(key, false);
++    return decrypt_with_key(data + kMagicSize, data + header, size - header, key, plain);
++  }
++  return false;
++}
++
++std::string load_password_file(const std::string& path) {
++  FILE* file = fopen(path.c_str(), "rb");
++  if (file == nullptr) return std::string();
++  uint8_t raw[kMaxSavedFileSize];
++  const size_t size = fread(raw, 1, sizeof(raw), file);
++  fclose(file);
++  if (size == 0) return std::string();
++  if (size >= kMagicSize &&
++      (memcmp(raw, kEncryptedMagic, kMagicSize) == 0 ||
++       memcmp(raw, kBoundMagic, kMagicSize) == 0)) {
++    std::string plain;
++    if (!aes_decrypt_password(raw, size, plain)) {
++      LOGINFO("saved-password: %s does not decrypt on this device\n", path.c_str());
++      return std::string();
++    }
++    if (plain.size() > kMaxSavedPassword) return std::string();
++    return plain;
++  }
++  // The old scheme: single-byte obfuscation without device binding. Read once
++  // for compatibility; the next successful unlock rewrites it in the new form.
++  std::string password;
++  password.reserve(size);
++  for (size_t i = 0; i < size; ++i)
++    password.push_back(static_cast<char>(raw[i] ^ kLegacyObfuscation));
++  if (password.size() > kMaxSavedPassword) password.resize(kMaxSavedPassword);
++  return password;
++}
++
++}  // namespace
++
++std::string load_saved_crypto_password() {
++  struct stat st {};
++  const bool exists = stat(kSavedPasswordPath, &st) == 0;
++  LOGINFO("saved-password: load %s exists=%d size=%ld\n", kSavedPasswordPath,
++          exists ? 1 : 0, exists ? static_cast<long>(st.st_size) : -1L);
++  std::string password = load_password_file(kSavedPasswordPath);
++  LOGINFO("saved-password: load result len=%zu\n", password.size());
++  return password;
++}
++
++void store_saved_crypto_password(const std::string& password) {
++  if (password.empty() || password.size() > kMaxSavedPassword) return;
++  std::vector<uint8_t> file;
++  if (!aes_encrypt_password(password, file)) return;
++  // The folder normally exists already (the settings file lives there);
++  // EEXIST is fine, anything else just means the write below fails too.
++  if (mkdir(TW_PERSIST_DIR, 0777) != 0 && errno != EEXIST)
++    LOGINFO("saved-password: mkdir %s failed (errno=%d)\n", TW_PERSIST_DIR, errno);
++  FILE* out = fopen(kSavedPasswordPath, "wb");
++  if (out == nullptr) {
++    LOGINFO("saved-password: open %s for write failed (errno=%d)\n",
++            kSavedPasswordPath, errno);
++    return;
++  }
++  const size_t written = fwrite(file.data(), 1, file.size(), out);
++  fclose(out);
++  if (written != file.size()) {
++    LOGINFO("saved-password: short write %zu/%zu to %s\n", written, file.size(),
++            kSavedPasswordPath);
++    remove(kSavedPasswordPath);
++    return;
++  }
++  chmod(kSavedPasswordPath, 0600);
++  LOGINFO("saved-password: stored %zu bytes to %s\n", written, kSavedPasswordPath);
++}
++
++void clear_saved_crypto_password() { remove(kSavedPasswordPath); }
++
++// A user-made copy of the same file on a USB stick is an external key: the
++// device never writes it, and it is left in place when it stops working.
++std::string load_otg_crypto_password() {
++  std::vector<PartitionList> list;
++  PartitionManager.Get_Partition_List("mount", &list);
++  for (const PartitionList& entry : list) {
++    const std::string& point = entry.Mount_Point;
++    if (point.rfind("/usbotg", 0) != 0 && point.rfind("/usb-otg", 0) != 0 &&
++        point.rfind("/usb_otg", 0) != 0)
++      continue;
++    if (!PartitionManager.Is_Mounted_By_Path(point)) {
++      if (!PartitionManager.Mount_By_Path(point, false)) {
++        LOGINFO("saved-password: could not mount %s\n", point.c_str());
++        continue;
++      }
++    }
++    std::string password = load_password_file(point + "/TWRP/.twrp_crypto_pwd");
++    if (password.empty()) password = load_password_file(point + "/TWRP/twrp_crypto_pwd");
++    if (!password.empty()) {
++      LOGINFO("saved-password: using the copy on %s\n", point.c_str());
++      return password;
++    }
++  }
++  return std::string();
++}
++
+ }  // namespace gui2_backend
+diff --git a/gui2/backend/twrp_decrypt_backend.h b/gui2/backend/twrp_decrypt_backend.h
+index 073f2dd..3ee6759 100644
+--- a/gui2/backend/twrp_decrypt_backend.h
++++ b/gui2/backend/twrp_decrypt_backend.h
+@@ -38,6 +38,18 @@ class twrp_decrypt_backend final : public decrypt_backend {
+   std::thread worker_;
+ };
+ 
++// The remembered decryption password, kept in the TWRP folder on the persist
++// partition so a later boot can unlock without asking. The file is bound to
++// the device (AES-256-CBC, key = SHA256(salt || serial)), so a copy taken off
++// the device does not decrypt; on the device itself it is still just as
++// sensitive as the lock password.
++std::string load_saved_crypto_password();
++void store_saved_crypto_password(const std::string& password);
++void clear_saved_crypto_password();
++// A copy of the file the user put on a USB stick, tried when the device
++// copy is missing or switched off.
++std::string load_otg_crypto_password();
++
+ }  // namespace gui2_backend
+ 
+ #endif  // GUI2_BACKEND_TWRP_DECRYPT_BACKEND_H
+diff --git a/gui2/gui2.cpp b/gui2/gui2.cpp
+index b1df7a7..83b9358 100644
+--- a/gui2/gui2.cpp
++++ b/gui2/gui2.cpp
+@@ -15,6 +15,7 @@
+ #include "app/screen_actions.h"
+ #include "backend/hardware_settings.h"
+ #include "backend/screen_backend.h"
++#include "backend/twrp_decrypt_backend.h"
+ #include "components/apply_button.h"
+ #include "components/check_row.h"
+ #include "components/setting_card.h"
+@@ -91,6 +92,9 @@
+ #include "shell/status_bar_controller.h"
+ #include "twrpminui/minui.h"
+ 
++// The General Settings switch that gates the saved decrypt password.
++static constexpr const char* kRememberPasswordKey = "tw_gui2_remember_pwd";
++
+ // Load WQY from recovery resources.
+ 
+ static lv_font_t* runtime_text_font;
+@@ -1592,6 +1596,14 @@ static void rebuild_general_settings_items(void) {
+   add(nullptr, text.general_skip_digest_generate, "tw_skip_digest_generate");
+   add(nullptr, text.general_verify_digest, "tw_skip_digest_check");
+   if (flag("tw_no_sha2", 0) == 0) add(nullptr, text.general_use_sha2, "tw_use_sha2");
++
++  // The saved-password switch sits in its own group and defaults to on until
++  // it is switched off once.
++  const size_t before_decrypt = general_settings_count;
++  add(text.general_group_decrypt, text.general_remember_password, kRememberPasswordKey);
++  if (general_settings_count > before_decrypt)
++    general_settings_items[general_settings_count - 1].value =
++        flag(kRememberPasswordKey, 1) != 0;
+ }
+ 
+ static void general_setting_event_cb(lv_event_t* event) {
+@@ -1612,6 +1624,9 @@ static void general_setting_event_cb(lv_event_t* event) {
+     return;
+   }
+   item.value = wanted;
++  // Switching the saved password off drops the device copy right away.
++  if (!wanted && std::string(item.key) == kRememberPasswordKey)
++    gui2_backend::clear_saved_crypto_password();
+   if (hardware != nullptr) hardware->vibrate(gui2_backend::haptic_channel::BUTTON);
+ }
+ 
+@@ -3784,6 +3799,8 @@ static void refresh_decrypt_progress(void) {
+       startup->status().pause == gui2_backend::startup_pause::DECRYPT) {
+     // Legacy leaves the page with tw_page_done and lets startup go on; the
+     // rest of it may still show a page, and home comes when it is done.
++    page_state.decrypt_used_saved = false;
++    page_state.decrypt_saved_from_otg = false;
+     page_state.decrypt_during_startup = true;
+     startup->finish_decrypt();
+     return;
+@@ -3795,8 +3812,21 @@ static void refresh_decrypt_progress(void) {
+   page_state.decrypt_refreshing = false;
+   if (refreshing || state == gui2_backend::decrypt_state::DONE) {
+     page_state.decrypt_failed = false;
++    page_state.decrypt_used_saved = false;
++    page_state.decrypt_saved_from_otg = false;
++    page_state.decrypt_saved_failures = 0;
+     navigate_to(page_kind::HOME, nullptr, page_transition::FADE);
+   } else {
++    if (page_state.decrypt_used_saved) {
++      // A single failure is usually the TEE not being ready yet during early
++      // startup, so keep the file and let the user try the prompt. Only after
++      // repeated failures is the saved copy considered stale.
++      page_state.decrypt_saved_failures++;
++      if (page_state.decrypt_saved_failures >= 3 && !page_state.decrypt_saved_from_otg)
++        gui2_backend::clear_saved_crypto_password();
++      page_state.decrypt_used_saved = false;
++      page_state.decrypt_saved_from_otg = false;
++    }
+     page_state.decrypt_failed = true;
+     navigate_to(page_kind::DECRYPT, nullptr, page_transition::REPLACE);
+   }
+@@ -3868,6 +3898,14 @@ static bool data_locked(void) {
+ 
+ static void enter_decrypt_flow(page_transition transition) {
+   if (decrypt == nullptr) return;
++  if (decrypt->kind() == gui2_backend::lock_kind::DEFAULT &&
++      decrypt->start(kDefaultCryptoPassword)) {
++    navigate_to(page_kind::DECRYPT_PROGRESS, nullptr, transition);
++    return;
++  }
++  // The saved-password attempt lives in show_decrypt_page(): this function is
++  // only reached from the manual "Decrypt Data" button, while startup gets to
++  // the decrypt page through enter_startup_pause().
+   navigate_to(page_kind::DECRYPT, nullptr, transition);
+ }
+ 
+@@ -5210,6 +5248,33 @@ static void show_mount_page(page_transition transition) {
+ }
+ 
+ static void show_decrypt_page(page_transition transition) {
++  // Startup (enter_startup_pause) and the manual button both land here, so this
++  // is the one place that runs on both paths. A saved password is tried before
++  // the page is built; a failure falls through to the normal prompt.
++  if (decrypt != nullptr && decrypt->is_encrypted() &&
++      decrypt->kind() != gui2_backend::lock_kind::DEFAULT &&
++      !page_state.decrypt_failed && !page_state.decrypt_used_saved) {
++    const bool remember_on =
++        settings == nullptr || settings->get_int(kRememberPasswordKey, 1) != 0;
++    std::string saved = remember_on
++        ? gui2_backend::load_saved_crypto_password() : std::string();
++    bool from_otg = false;
++    if (saved.empty()) {
++      saved = gui2_backend::load_otg_crypto_password();
++      from_otg = !saved.empty();
++    }
++    if (!saved.empty()) {
++      page_state.decrypt_used_saved = true;
++      page_state.decrypt_saved_from_otg = from_otg;
++      decrypt_attempt(saved);
++      // start() can refuse before navigating (no selectable user); fall through
++      // to the prompt instead of leaving the screen blank.
++      if (page_router.current() == page_kind::DECRYPT_PROGRESS) return;
++      page_state.decrypt_used_saved = false;
++      page_state.decrypt_saved_from_otg = false;
++    }
++  }
++
+   const int bottom_reserved = ui.nav_height + single_line_card_height() + ui.cards_top_gap * 2;
+   create_page_scaffold(page_kind::DECRYPT, false, strings().decrypt_title,
+                        "", bottom_reserved, transition);
+diff --git a/gui2/i18n/en.cpp b/gui2/i18n/en.cpp
+index 6082fdc..a0060b1 100644
+--- a/gui2/i18n/en.cpp
++++ b/gui2/i18n/en.cpp
+@@ -377,6 +377,8 @@ extern const language_pack kEnglish = {
+   "Install, backup and debugging switches",
+   "Install",
+   "Wipe and backup",
++  "Data decryption",
++  "Remember decrypt password",
+   "Verify zip signature",
+   "Skip digest check before install",
+   "Reboot after installation",
+diff --git a/gui2/i18n/i18n.h b/gui2/i18n/i18n.h
+index 771df75..a2ff8a0 100644
+--- a/gui2/i18n/i18n.h
++++ b/gui2/i18n/i18n.h
+@@ -404,6 +404,8 @@ struct language_pack {
+   const char* general_settings_summary;
+   const char* general_group_install;
+   const char* general_group_wipe_backup;
++  const char* general_group_decrypt;
++  const char* general_remember_password;
+   const char* general_zip_signature;
+   const char* general_skip_digest_zip;
+   const char* general_install_reboot;
+diff --git a/gui2/i18n/zh_cn.cpp b/gui2/i18n/zh_cn.cpp
+index f88ca11..b700e0d 100644
+--- a/gui2/i18n/zh_cn.cpp
++++ b/gui2/i18n/zh_cn.cpp
+@@ -377,6 +377,8 @@ extern const language_pack kSimplifiedChinese = {
+   "安装、备份与调试相关的开关",
+   "安装",
+   "清除与备份",
++  "数据解密",
++  "记住解密密码",
+   "校验刷机包签名",
+   "安装刷机包前跳过摘要校验",
+   "安装完成后自动重启",
+diff --git a/gui2/i18n/zh_tw.cpp b/gui2/i18n/zh_tw.cpp
+index f28b677..3f30ad3 100644
+--- a/gui2/i18n/zh_tw.cpp
++++ b/gui2/i18n/zh_tw.cpp
+@@ -377,6 +377,8 @@ extern const language_pack kTraditionalChinese = {
+   "安裝、備份與偵錯相關的開關",
+   "安裝",
+   "清除與備份",
++  "資料解密",
++  "記住解密密碼",
+   "驗證刷機包簽章",
+   "安裝刷機包前略過摘要驗證",
+   "安裝完成後自動重新啟動",
+diff --git a/gui2/pages/page_state.h b/gui2/pages/page_state.h
+index c7c64d2..f8f029e 100644
+--- a/gui2/pages/page_state.h
++++ b/gui2/pages/page_state.h
+@@ -178,6 +178,13 @@ struct page_state {
+   uint64_t decrypt_last_poll_ms = 0;
+   uint64_t decrypt_prompt_ms = 0;
+   bool decrypt_refreshing = false;
++  // The running attempt uses the saved password; repeated failures clear the
++  // file, a single one does not (the TEE may simply not be ready yet).
++  bool decrypt_used_saved = false;
++  // That saved copy lives on a USB stick; a failure leaves it alone.
++  bool decrypt_saved_from_otg = false;
++  // Consecutive failures of the saved password, reset on a successful unlock.
++  int decrypt_saved_failures = 0;
+   // The attempt ran during startup's decrypt pause; the page stays until
+   // startup finishes.
+   bool decrypt_during_startup = false;
