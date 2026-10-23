@@ -36,9 +36,17 @@ on:
         required: true
         default: "recovery"
       RECOVERY_SOURCE:
-        description: "GUI2 来源：upstream（twrp-16.0 已含 LVGL #37）或 fork（lingqiqi5211 taro-lvgl）"
+        description: "GUI2 来源：branch（自己的分支，默认）/ upstream（纯上游）/ fork（lingqiqi5211）"
         required: false
-        default: "upstream"
+        default: "branch"
+      RECOVERY_BRANCH_URL:
+        description: "RECOVERY_SOURCE=branch 时 bootable/recovery 从这个仓库 clone"
+        required: false
+        default: "https://github.com/PXIAOHE/twrp_device_xiaomi_sm8650"
+      RECOVERY_BRANCH_REF:
+        description: "RECOVERY_SOURCE=branch 时用的分支（自带 auto-decrypt 改动，不再打 patch）"
+        required: false
+        default: "recovery-gui2-autodecrypt"
       RECOVERY_FORK_REF:
         description: "lingqiqi5211 recovery fork ref (branch/tag, default taro-lvgl)"
         required: false
@@ -65,7 +73,9 @@ env:
   DEVICE_NAME: ${{ github.event.inputs.DEVICE_NAME || 'manet' }}
   LUNCH_TARGET: ${{ github.event.inputs.LUNCH_TARGET || github.event.inputs.DEVICE_NAME || 'manet' }}
   BUILD_PARTITION: ${{ github.event.inputs.BUILD_PARTITION || 'recovery' }}
-  RECOVERY_SOURCE: ${{ github.event.inputs.RECOVERY_SOURCE || 'upstream' }}
+  RECOVERY_SOURCE: ${{ github.event.inputs.RECOVERY_SOURCE || 'branch' }}
+  RECOVERY_BRANCH_URL: ${{ github.event.inputs.RECOVERY_BRANCH_URL || 'https://github.com/PXIAOHE/twrp_device_xiaomi_sm8650' }}
+  RECOVERY_BRANCH_REF: ${{ github.event.inputs.RECOVERY_BRANCH_REF || 'recovery-gui2-autodecrypt' }}
   RECOVERY_FORK_REF: ${{ github.event.inputs.RECOVERY_FORK_REF || 'taro-lvgl' }}
   RECOVERY_FORK_SHA: ${{ github.event.inputs.RECOVERY_FORK_SHA || '3b77055e3e7e872e847dfde8d06aba7d772b3016' }}
 
@@ -164,7 +174,11 @@ jobs:
           fi
         }
 
-        if [ "$RECOVERY_SOURCE" = "fork" ]; then
+        if [ "$RECOVERY_SOURCE" = "branch" ]; then
+          echo "--- GUI2 来源：自己的分支 $RECOVERY_BRANCH_REF（改动在分支提交里，不打 patch）---"
+          rm -rf bootable/recovery
+          git clone --depth=1 -b "$RECOVERY_BRANCH_REF" "$RECOVERY_BRANCH_URL" bootable/recovery
+        elif [ "$RECOVERY_SOURCE" = "fork" ]; then
           echo "--- GUI2 来源：lingqiqi5211 fork ($RECOVERY_FORK_REF) ---"
           rm -rf bootable/recovery
           git clone --single-branch -b "$RECOVERY_FORK_REF" https://github.com/lingqiqi5211/android_bootable_recovery bootable/recovery
@@ -189,6 +203,11 @@ jobs:
     - name: Apply GUI2 patches
       run: |
         set -e
+        if [ "$RECOVERY_SOURCE" = "branch" ]; then
+          echo "RECOVERY_SOURCE=branch：改动已在该分支提交里，跳过 patch"
+          git -C bootable/recovery log --oneline -3
+          exit 0
+        fi
         # 按 RECOVERY_SOURCE 选补丁目录：upstream 与 fork 的 GUI2 代码不同，
         # 同一份 patch 不可能两边都干净应用，所以分开维护。
         PATCH_DIR="$GITHUB_WORKSPACE/device/$DEVICE_PATH/patches/$RECOVERY_SOURCE"
