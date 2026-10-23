@@ -326,7 +326,7 @@ index 073f2dd..3ee6759 100644
  
  #endif  // GUI2_BACKEND_TWRP_DECRYPT_BACKEND_H
 diff --git a/gui2/gui2.cpp b/gui2/gui2.cpp
-index b1df7a7..83b9358 100644
+index b1df7a7..25d9104 100644
 --- a/gui2/gui2.cpp
 +++ b/gui2/gui2.cpp
 @@ -15,6 +15,7 @@
@@ -403,10 +403,11 @@ index b1df7a7..83b9358 100644
      page_state.decrypt_failed = true;
      navigate_to(page_kind::DECRYPT, nullptr, page_transition::REPLACE);
    }
-@@ -3868,6 +3898,14 @@ static bool data_locked(void) {
+@@ -3868,6 +3898,23 @@ static bool data_locked(void) {
  
  static void enter_decrypt_flow(page_transition transition) {
    if (decrypt == nullptr) return;
++<<<<<<< /tmp/mf_ours
 +  if (decrypt->kind() == gui2_backend::lock_kind::DEFAULT &&
 +      decrypt->start(kDefaultCryptoPassword)) {
 +    navigate_to(page_kind::DECRYPT_PROGRESS, nullptr, transition);
@@ -415,10 +416,18 @@ index b1df7a7..83b9358 100644
 +  // The saved-password attempt lives in show_decrypt_page(): this function is
 +  // only reached from the manual "Decrypt Data" button, while startup gets to
 +  // the decrypt page through enter_startup_pause().
++||||||| /tmp/mf_base
++  if (decrypt->kind() == gui2_backend::lock_kind::DEFAULT &&
++      decrypt->start(kDefaultCryptoPassword)) {
++    navigate_to(page_kind::DECRYPT_PROGRESS, nullptr, transition);
++    return;
++  }
++=======
++>>>>>>> /tmp/mf_theirs
    navigate_to(page_kind::DECRYPT, nullptr, transition);
  }
  
-@@ -5210,6 +5248,33 @@ static void show_mount_page(page_transition transition) {
+@@ -5210,6 +5257,33 @@ static void show_mount_page(page_transition transition) {
  }
  
  static void show_decrypt_page(page_transition transition) {
@@ -453,57 +462,71 @@ index b1df7a7..83b9358 100644
    create_page_scaffold(page_kind::DECRYPT, false, strings().decrypt_title,
                         "", bottom_reserved, transition);
 diff --git a/gui2/i18n/en.cpp b/gui2/i18n/en.cpp
-index 6082fdc..a0060b1 100644
+index 6082fdc..4240429 100644
 --- a/gui2/i18n/en.cpp
 +++ b/gui2/i18n/en.cpp
-@@ -377,6 +377,8 @@ extern const language_pack kEnglish = {
-   "Install, backup and debugging switches",
-   "Install",
-   "Wipe and backup",
+@@ -437,6 +437,8 @@ extern const language_pack kEnglish = {
+   "Installation log",
+   "Wipe log",
+   "Install ZIP",
 +  "Data decryption",
 +  "Remember decrypt password",
-   "Verify zip signature",
-   "Skip digest check before install",
-   "Reboot after installation",
+ };
+ 
+ }  // namespace gui2_i18n
 diff --git a/gui2/i18n/i18n.h b/gui2/i18n/i18n.h
-index 771df75..a2ff8a0 100644
+index 771df75..5f52cee 100644
 --- a/gui2/i18n/i18n.h
 +++ b/gui2/i18n/i18n.h
-@@ -404,6 +404,8 @@ struct language_pack {
-   const char* general_settings_summary;
-   const char* general_group_install;
-   const char* general_group_wipe_backup;
+@@ -429,6 +429,8 @@ struct language_pack {
+   const char* progress_install_log;
+   const char* progress_wipe_log;
+   const char* progress_install_title;
 +  const char* general_group_decrypt;
 +  const char* general_remember_password;
-   const char* general_zip_signature;
-   const char* general_skip_digest_zip;
-   const char* general_install_reboot;
+ };
+ 
+ const language_pack& get_language_pack(language_id language);
+diff --git a/gui2/i18n/ru.cpp b/gui2/i18n/ru.cpp
+index c3d2572..a39b394 100644
+--- a/gui2/i18n/ru.cpp
++++ b/gui2/i18n/ru.cpp
+@@ -437,6 +437,8 @@ extern const language_pack kRussian = {
+   "Лог установки",
+   "Лог очистки",
+   "Установить ZIP",
++  "Расшифровка данных",
++  "Запомнить пароль расшифровки",
+ };
+ 
+ }  // namespace gui2_i18n
+\ No newline at end of file
 diff --git a/gui2/i18n/zh_cn.cpp b/gui2/i18n/zh_cn.cpp
-index f88ca11..b700e0d 100644
+index f88ca11..0334710 100644
 --- a/gui2/i18n/zh_cn.cpp
 +++ b/gui2/i18n/zh_cn.cpp
-@@ -377,6 +377,8 @@ extern const language_pack kSimplifiedChinese = {
-   "安装、备份与调试相关的开关",
-   "安装",
-   "清除与备份",
+@@ -435,6 +435,8 @@ extern const language_pack kSimplifiedChinese = {
+   "安装日志",
+   "清除日志",
+   "刷入 ZIP",
 +  "数据解密",
 +  "记住解密密码",
-   "校验刷机包签名",
-   "安装刷机包前跳过摘要校验",
-   "安装完成后自动重启",
+ };
+ 
+ }  // namespace gui2_i18n
 diff --git a/gui2/i18n/zh_tw.cpp b/gui2/i18n/zh_tw.cpp
-index f28b677..3f30ad3 100644
+index f28b677..77bd9ff 100644
 --- a/gui2/i18n/zh_tw.cpp
 +++ b/gui2/i18n/zh_tw.cpp
-@@ -377,6 +377,8 @@ extern const language_pack kTraditionalChinese = {
-   "安裝、備份與偵錯相關的開關",
-   "安裝",
-   "清除與備份",
+@@ -435,6 +435,8 @@ extern const language_pack kTraditionalChinese = {
+   "安裝日誌",
+   "清除日誌",
+   "刷入 ZIP",
 +  "資料解密",
 +  "記住解密密碼",
-   "驗證刷機包簽章",
-   "安裝刷機包前略過摘要驗證",
-   "安裝完成後自動重新啟動",
+ };
+ 
+ }  // namespace gui2_i18n
 diff --git a/gui2/pages/page_state.h b/gui2/pages/page_state.h
 index c7c64d2..f8f029e 100644
 --- a/gui2/pages/page_state.h
