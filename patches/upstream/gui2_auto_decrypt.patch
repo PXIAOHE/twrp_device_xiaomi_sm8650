@@ -326,7 +326,7 @@ index 073f2dd..3ee6759 100644
  
  #endif  // GUI2_BACKEND_TWRP_DECRYPT_BACKEND_H
 diff --git a/gui2/gui2.cpp b/gui2/gui2.cpp
-index b1df7a7..25d9104 100644
+index b1df7a7..fec3ef2 100644
 --- a/gui2/gui2.cpp
 +++ b/gui2/gui2.cpp
 @@ -15,6 +15,7 @@
@@ -403,31 +403,7 @@ index b1df7a7..25d9104 100644
      page_state.decrypt_failed = true;
      navigate_to(page_kind::DECRYPT, nullptr, page_transition::REPLACE);
    }
-@@ -3868,6 +3898,23 @@ static bool data_locked(void) {
- 
- static void enter_decrypt_flow(page_transition transition) {
-   if (decrypt == nullptr) return;
-+<<<<<<< /tmp/mf_ours
-+  if (decrypt->kind() == gui2_backend::lock_kind::DEFAULT &&
-+      decrypt->start(kDefaultCryptoPassword)) {
-+    navigate_to(page_kind::DECRYPT_PROGRESS, nullptr, transition);
-+    return;
-+  }
-+  // The saved-password attempt lives in show_decrypt_page(): this function is
-+  // only reached from the manual "Decrypt Data" button, while startup gets to
-+  // the decrypt page through enter_startup_pause().
-+||||||| /tmp/mf_base
-+  if (decrypt->kind() == gui2_backend::lock_kind::DEFAULT &&
-+      decrypt->start(kDefaultCryptoPassword)) {
-+    navigate_to(page_kind::DECRYPT_PROGRESS, nullptr, transition);
-+    return;
-+  }
-+=======
-+>>>>>>> /tmp/mf_theirs
-   navigate_to(page_kind::DECRYPT, nullptr, transition);
- }
- 
-@@ -5210,6 +5257,33 @@ static void show_mount_page(page_transition transition) {
+@@ -5210,6 +5240,33 @@ static void show_mount_page(page_transition transition) {
  }
  
  static void show_decrypt_page(page_transition transition) {
