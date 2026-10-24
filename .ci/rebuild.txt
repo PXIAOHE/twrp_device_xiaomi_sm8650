@@ -1,4 +1,4 @@
 recovery-ref: recovery-gui2-autodecrypt
-recovery-sha: 0cce0911
-reason: 自动解密迁到 lvgl 主线（导航栏手势交换 / 备份名修复 / 俄语翻译）
-requested-at: 2026-10-24T01:35:16Z
+recovery-sha: 17c6d118
+reason: 修 liblvgl_twrp 静态链接失败（改 shared）+ lvgl 主线功能 + 自动解密
+requested-at: 2026-10-24T02:22:46Z
