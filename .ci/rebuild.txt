@@ -1,4 +1,4 @@
 recovery-ref: recovery-gui2-autodecrypt
-recovery-sha: 80d1d8ff
-reason: 自动解密改 weaver 就绪轮询（去掉 6s 盲等，两台都更快）
-requested-at: 2026-10-24T05:36:17Z
+recovery-sha: 742235f0
+reason: 保存密码尝试挪到页面构建之后（对齐 10-17 顺序，两台都恢复丝滑）
+requested-at: 2026-10-24T05:47:52Z
