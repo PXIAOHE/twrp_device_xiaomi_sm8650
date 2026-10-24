@@ -1,4 +1,4 @@
 recovery-ref: recovery-gui2-autodecrypt
-recovery-sha: 076b5a66
-reason: 修 Android.bp 注释块误插（blueprint bootstrap 失败）
-requested-at: 2026-10-24T02:45:39Z
+recovery-sha: 80d1d8ff
+reason: 自动解密改 weaver 就绪轮询（去掉 6s 盲等，两台都更快）
+requested-at: 2026-10-24T05:36:17Z
