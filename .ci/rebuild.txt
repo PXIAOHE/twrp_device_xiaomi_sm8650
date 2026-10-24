@@ -1,0 +1,4 @@
+recovery-ref: recovery-gui2-autodecrypt
+recovery-sha: 0cce0911
+reason: 8850 用 lvgl 主线（导航栏手势交换 / 备份名修复 / 俄语）+ 自动解密
+requested-at: 2026-10-24T01:37:34Z
