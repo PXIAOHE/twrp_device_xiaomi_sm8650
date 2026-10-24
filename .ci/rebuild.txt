@@ -1,4 +1,4 @@
 recovery-ref: recovery-gui2-autodecrypt
-recovery-sha: 729af4ef
-reason: manet 等 weaver 后再自动解密（设备分流）
-requested-at: 2026-10-24T01:24:47Z
+recovery-sha: 0cce0911
+reason: 自动解密迁到 lvgl 主线（导航栏手势交换 / 备份名修复 / 俄语翻译）
+requested-at: 2026-10-24T01:35:16Z
