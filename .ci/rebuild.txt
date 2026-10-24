@@ -1,0 +1,4 @@
+recovery-ref: recovery-gui2-autodecrypt
+recovery-sha: 729af4ef
+reason: manet 等 weaver 后再自动解密（设备分流）
+requested-at: 2026-10-24T01:24:47Z
