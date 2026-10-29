@@ -1,4 +1,4 @@
 recovery-ref: recovery-gui2-autodecrypt
-recovery-sha: e66e0316
-reason: 上游 lvgl 无新提交（tip a961f910），按现状重出包
-requested-at: 2026-10-29T22:07:49Z
+recovery-sha: 492dca06
+reason: 同步 TWRP-Test twrp-16.0（8a58fc3b：去旧 UI/键盘保留导航/加粗滑条等）+ vold 换新解密分支 + 保留自动解密
+requested-at: 2026-10-29T22:20:15Z
