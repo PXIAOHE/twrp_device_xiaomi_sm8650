@@ -128,9 +128,12 @@ jobs:
         create-symlink: true
 
     - name: Setup zram
+      # zram 只是给编译多挤一点内存；runner 内核一换，对应的
+      # linux-modules-extra 常常还没进源，这一步不该把整个构建带下去。
+      continue-on-error: true
       run: |
-        sudo apt install linux-modules-extra-$(uname -r) zram-tools -y
-        sudo modprobe zram
+        sudo apt install linux-modules-extra-$(uname -r) zram-tools -y || sudo apt install zram-tools -y || true
+        sudo modprobe zram || true
         sudo sed -i 's/^#PERCENT=50/PERCENT=90/' /etc/default/zramswap
         sudo sed -i 's/^#PRIORITY=100/PRIORITY=1000/' /etc/default/zramswap
         sudo systemctl restart zramswap
