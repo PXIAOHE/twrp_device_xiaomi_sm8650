@@ -1,4 +1,4 @@
 recovery-ref: recovery-gui2-autodecrypt
-recovery-sha: 8a012a63
-reason: 修 manet used_saved 被提前清掉导致失败后不重试
-requested-at: 2026-10-24T07:41:41Z
+recovery-sha: e66e0316
+reason: 上游 lvgl 无新提交（tip a961f910），按现状重出包
+requested-at: 2026-10-29T22:07:49Z
