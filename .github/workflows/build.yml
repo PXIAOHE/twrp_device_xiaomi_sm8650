@@ -203,10 +203,11 @@ jobs:
         ensure_repo external/libvpx  https://github.com/TWRP-Test/android_external_libvpx  twrp-16.0
         ensure_repo external/libwebm https://github.com/TWRP-Test/android_external_libwebm twrp-16.0
 
-        echo "--- system/vold：换用 TWRP-Test 的新解密分支（fd347403 vold: Sync decryption with android-16.0.0_r1）---"
-        rm -rf system/vold
-        git clone --depth=1 -b twrp-16.0-new-data-decryption https://github.com/TWRP-Test/android_system_vold system/vold
-        echo "vold: $(git -C system/vold rev-parse --short HEAD) $(git -C system/vold log --oneline -1)"
+        # vold 的新解密提交（fd347403）在 TWRP-Test/android_system_vold 的
+        # twrp-16.0-new-data-decryption 分支上，但它要用 TWRP 自己 fork 的
+        # build/soong 里的 product_variables.device_support_hwfde；
+        # 我们的 manifest 走 default.xml（AOSP soong），单独换 vold 会直接
+        # 报 unrecognized property。要真正带上，得改成 twrp-default.xml 整包。
 
     - name: Apply GUI2 patches
       run: |
