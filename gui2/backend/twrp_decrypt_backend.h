@@ -38,6 +38,18 @@ class twrp_decrypt_backend final : public decrypt_backend {
   std::thread worker_;
 };
 
+// The remembered decryption password, kept in the TWRP folder on the persist
+// partition so a later boot can unlock without asking. The file is bound to
+// the device (AES-256-CBC, key = SHA256(salt || serial)), so a copy taken off
+// the device does not decrypt; on the device itself it is still just as
+// sensitive as the lock password.
+std::string load_saved_crypto_password();
+void store_saved_crypto_password(const std::string& password);
+void clear_saved_crypto_password();
+// A copy of the file the user put on a USB stick, tried when the device
+// copy is missing or switched off.
+std::string load_otg_crypto_password();
+
 }  // namespace gui2_backend
 
 #endif  // GUI2_BACKEND_TWRP_DECRYPT_BACKEND_H

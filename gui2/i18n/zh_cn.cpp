@@ -671,6 +671,8 @@ extern const language_pack kSimplifiedChinese = {
   "ZIP Treble 兼容性检查失败！",
   "安装 Zip 刷机包“%s”时出错",
   "一个或多个刷机包请求清除 Cache -- 正在清除 Cache。",
+  "数据解密",
+  "记住解密密码",
 };
 
 }  // namespace gui2_i18n

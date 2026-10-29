@@ -182,6 +182,13 @@ struct page_state {
   uint64_t decrypt_last_poll_ms = 0;
   uint64_t decrypt_prompt_ms = 0;
   bool decrypt_refreshing = false;
+  // The running attempt uses the saved password; repeated failures clear the
+  // file, a single one does not (the TEE may simply not be ready yet).
+  bool decrypt_used_saved = false;
+  // That saved copy lives on a USB stick; a failure leaves it alone.
+  bool decrypt_saved_from_otg = false;
+  // Consecutive failures of the saved password, reset on a successful unlock.
+  int decrypt_saved_failures = 0;
   // The attempt ran during startup's decrypt pause; the page stays until
   // startup finishes.
   bool decrypt_during_startup = false;

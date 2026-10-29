@@ -1,6 +1,7 @@
 #include <map>
 #include <time.h>
 #include <unistd.h>
+#include <sys/system_properties.h>
 
 #include <algorithm>
 #include <cctype>
@@ -16,6 +17,7 @@
 #include "app/screen_actions.h"
 #include "backend/hardware_settings.h"
 #include "backend/screen_backend.h"
+#include "backend/twrp_decrypt_backend.h"
 #include "components/apply_button.h"
 #include "components/check_row.h"
 #include "components/setting_card.h"
@@ -91,6 +93,11 @@
 #include "shell/status_bar.h"
 #include "shell/status_bar_controller.h"
 #include "twrpminui/minui.h"
+
+// The General Settings switch that gates the saved decrypt password.
+static constexpr const char* kRememberPasswordKey = "tw_gui2_remember_pwd";
+// 万一某个语言包在这一项上是空的，退回英文，避免整行被渲染成空白。
+static constexpr const char* kRememberPasswordFallback = "Remember decrypt password";
 
 // Load WQY from recovery resources.
 
@@ -1561,6 +1568,25 @@ static void rebuild_general_settings_items(void) {
   add(nullptr, text.general_skip_digest_generate, "tw_skip_digest_generate");
   add(nullptr, text.general_verify_digest, "tw_skip_digest_check");
   if (flag("tw_no_sha2", 0) == 0) add(nullptr, text.general_use_sha2, "tw_use_sha2");
+
+  // 记住解密密码：挂在已有的「清除/备份」分组下，不再单独建分组——
+  // 单独分组在切换语言后有过整行消失的情况；语言串为空时退回英文。
+  const char* remember_label = text.general_remember_password;
+  if (remember_label == nullptr || remember_label[0] == '\0')
+    remember_label = kRememberPasswordFallback;
+  const size_t before_decrypt = general_settings_count;
+  add(text.general_group_wipe_backup, remember_label, kRememberPasswordKey);
+  if (general_settings_count > before_decrypt) {
+    general_settings_items[general_settings_count - 1].value =
+        flag(kRememberPasswordKey, 1) != 0;
+    fprintf(stdout, "I:gui2: remember-password row added [%s] value=%d\n", remember_label,
+            general_settings_items[general_settings_count - 1].value ? 1 : 0);
+    fflush(stdout);
+  } else {
+    fprintf(stdout, "I:gui2: remember-password row NOT added (capacity %zu)\n",
+            std::size(general_settings_items));
+    fflush(stdout);
+  }
 }
 
 static void general_setting_event_cb(lv_event_t* event) {
@@ -1584,6 +1610,9 @@ static void general_setting_event_cb(lv_event_t* event) {
   item.value = wanted;
   if (strcmp(item.key, "tw_gui2_swap_navigation") == 0)
     gui2_shell::set_bottom_navigation_swapped(navigation_view, ui, wanted);
+  // Switching the saved password off drops the device copy right away.
+  if (!wanted && std::string(item.key) == kRememberPasswordKey)
+    gui2_backend::clear_saved_crypto_password();
   if (hardware != nullptr) hardware->vibrate(gui2_backend::haptic_channel::BUTTON);
 }
 
@@ -3764,6 +3793,49 @@ static void decrypt_attempt(const std::string& password) {
   page_state.decrypt_prompt_ms = std::max<uint64_t>(1, monotonic_ms());
 }
 
+// weaver 就绪轮询：失败后不盲等固定秒数，也不反复打 TEE，而是每 150ms 读一次
+// init.svc.*weaver* 属性；服务一起来就立刻再试。属性彻底不存在（没有 weaver 的机器）
+// 则 1s 后直接重试，最多等 15s。
+struct saved_attempt_ctx {
+  std::string password;
+  uint32_t waited_ms = 0;
+  bool saw_weaver_service = false;
+};
+
+static bool weaver_service_running(bool* saw_any) {
+  static const char* kProps[] = {
+      "init.svc.vendor.weaver_nxp", "init.svc.odm.weaver_nxp",
+      "init.svc.vendor.weaver", "init.svc.weaver"};
+  for (const char* name : kProps) {
+    char value[PROP_VALUE_MAX] = {};
+    if (__system_property_get(name, value) <= 0 || value[0] == '\0') continue;
+    if (saw_any != nullptr) *saw_any = true;
+    if (strcmp(value, "running") == 0) return true;
+  }
+  return false;
+}
+
+static void saved_password_poll_cb(lv_timer_t* timer) {
+  auto* ctx = static_cast<saved_attempt_ctx*>(lv_timer_get_user_data(timer));
+  if (ctx == nullptr) {
+    lv_timer_delete(timer);
+    return;
+  }
+  ctx->waited_ms += 150;
+  bool saw_any = ctx->saw_weaver_service;
+  const bool ready = weaver_service_running(&saw_any);
+  ctx->saw_weaver_service = saw_any;
+  const bool absent = !saw_any && ctx->waited_ms >= 1000;
+  if (ready || absent || ctx->waited_ms >= 15000) {
+    fprintf(stdout, "I:gui2: saved-password fires after %u ms (weaver=%s)\n",
+            ctx->waited_ms, ready ? "ready" : (absent ? "absent" : "timeout"));
+    fflush(stdout);
+    decrypt_attempt(ctx->password);
+    delete ctx;
+    lv_timer_delete(timer);
+  }
+}
+
 static void poll_decrypt_console(void) {
   poll_progress_console(page_state.decrypt_progress.console, page_state.decrypt_console,
                         page_state.decrypt_console_armed);
@@ -3806,6 +3878,8 @@ static void refresh_decrypt_progress(void) {
       startup->status().pause == gui2_backend::startup_pause::DECRYPT) {
     // Legacy leaves the page with tw_page_done and lets startup go on; the
     // rest of it may still show a page, and home comes when it is done.
+    page_state.decrypt_used_saved = false;
+    page_state.decrypt_saved_from_otg = false;
     page_state.decrypt_during_startup = true;
     startup->finish_decrypt();
     return;
@@ -3817,8 +3891,38 @@ static void refresh_decrypt_progress(void) {
   page_state.decrypt_refreshing = false;
   if (refreshing || state == gui2_backend::decrypt_state::DONE) {
     page_state.decrypt_failed = false;
+    page_state.decrypt_used_saved = false;
+    page_state.decrypt_saved_from_otg = false;
+    page_state.decrypt_saved_failures = 0;
     navigate_to(page_kind::HOME, nullptr, page_transition::FADE);
   } else {
+    if (page_state.decrypt_used_saved) {
+      // 第一次尝试经常撞上 TEE/weaver 还没就绪（日志里是
+      // "Failed to get weaver key size"），紧接着的第二次就成功。
+      // 所以在报「凭证不对」之前，先用同一份保存的密码静默重试。
+      page_state.decrypt_saved_failures++;
+      if (page_state.decrypt_saved_failures <= 6) {
+        std::string retry_saved = gui2_backend::load_saved_crypto_password();
+        if (retry_saved.empty()) retry_saved = gui2_backend::load_otg_crypto_password();
+        if (!retry_saved.empty()) {
+          auto* ctx = new saved_attempt_ctx();
+          ctx->password = retry_saved;
+          lv_timer_t* poll = lv_timer_create(saved_password_poll_cb, 150, ctx);
+          if (poll != nullptr) {
+            fprintf(stdout,
+                    "I:gui2: saved-password attempt %d failed; polling weaver every 150 ms\n",
+                    (int)page_state.decrypt_saved_failures);
+            fflush(stdout);
+            return;   // 停在进度页，weaver 一起来就再试，不弹「凭证不对」
+          }
+          delete ctx;
+        }
+      }
+      if (page_state.decrypt_saved_failures >= 3 && !page_state.decrypt_saved_from_otg)
+        gui2_backend::clear_saved_crypto_password();
+      page_state.decrypt_used_saved = false;
+      page_state.decrypt_saved_from_otg = false;
+    }
     page_state.decrypt_failed = true;
     navigate_to(page_kind::DECRYPT, nullptr, page_transition::REPLACE);
   }
@@ -5278,6 +5382,37 @@ static void show_decrypt_page(page_transition transition) {
   if (decrypt != nullptr && decrypt->kind() == gui2_backend::lock_kind::DEFAULT &&
       !page_state.decrypt_failed)
     decrypt_attempt(kDefaultCryptoPassword);
+
+  // 保存密码的尝试放在「页面构建完成之后」——与 10-17 manet 那版一致：
+  // 那时 weaver/keymaster 已经上电，第一次就能解，不需要任何等待。
+  // Startup（enter_startup_pause）与手动按钮都会走到这里，是唯一的公共入口。
+  if (decrypt != nullptr && decrypt->is_encrypted() &&
+      decrypt->kind() != gui2_backend::lock_kind::DEFAULT &&
+      !page_state.decrypt_failed && !page_state.decrypt_used_saved) {
+    const bool remember_on =
+        settings == nullptr || settings->get_int(kRememberPasswordKey, 1) != 0;
+    std::string saved = remember_on
+        ? gui2_backend::load_saved_crypto_password() : std::string();
+    bool from_otg = false;
+    if (saved.empty()) {
+      saved = gui2_backend::load_otg_crypto_password();
+      from_otg = !saved.empty();
+    }
+    if (!saved.empty()) {
+      page_state.decrypt_used_saved = true;
+      page_state.decrypt_saved_from_otg = from_otg;
+      page_state.decrypt_saved_failures = 0;
+      // start() 成功（decrypt_prompt_ms 被写入）才保留「这次用的是保存密码」标记，
+      // 失败时 refresh_decrypt_progress 才知道要轮询 weaver 重试，而不是直接弹
+      // 「凭证不对」。start() 直接被拒（例如没有可选用户）才退回提示页。
+      const uint64_t prompt_before = page_state.decrypt_prompt_ms;
+      decrypt_attempt(saved);
+      if (page_state.decrypt_prompt_ms == prompt_before) {
+        page_state.decrypt_used_saved = false;
+        page_state.decrypt_saved_from_otg = false;
+      }
+    }
+  }
 }
 
 static void show_format_data_page(page_transition transition) {
