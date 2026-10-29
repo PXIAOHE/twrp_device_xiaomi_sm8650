@@ -1,4 +1,4 @@
 recovery-ref: recovery-gui2-autodecrypt
 recovery-sha: 492dca06
-reason: 同步 TWRP-Test twrp-16.0（8a58fc3b）+ vold 换新解密分支 + 保留自动解密
-requested-at: 2026-10-29T22:20:50Z
+reason: 新上游 recovery（TWRP-Test twrp-16.0 8a58fc3b）；vold 换分支需要 TWRP 的 soong，先不换
+requested-at: 2026-10-29T23:15:15Z
