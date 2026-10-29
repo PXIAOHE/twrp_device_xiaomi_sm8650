@@ -11,6 +11,10 @@ on:
         description: "TWRP branch"
         required: true
         default: "twrp-16.0"
+      TWRP_MANIFEST_FILE:
+        description: "manifest 文件名：twrp-default.xml（TWRP fork，默认）/ default.xml（纯 AOSP）"
+        required: false
+        default: "twrp-default.xml"
       DEVICE_TREE_URL:
         description: "Device tree url"
         required: true
@@ -67,6 +71,9 @@ concurrency:
 env:
   TWRP_MANIFEST_URL: ${{ github.event.inputs.TWRP_MANIFEST_URL || 'https://github.com/TWRP-Test/platform_manifest_twrp_aosp' }}
   TWRP_MANIFEST_BRANCH: ${{ github.event.inputs.TWRP_MANIFEST_BRANCH || 'twrp-16.0' }}
+  # twrp-default.xml 才会把 build/soong 和 system/vold 换成 TWRP 的 fork；
+  # default.xml 是纯 AOSP，vold 的新解密分支在它上面编不过。
+  TWRP_MANIFEST_FILE: ${{ github.event.inputs.TWRP_MANIFEST_FILE || 'twrp-default.xml' }}
   DEVICE_TREE_URL: ${{ github.event.inputs.DEVICE_TREE_URL || 'https://github.com/PXIAOHE/twrp_device_xiaomi_sm8650' }}
   DEVICE_TREE_BRANCH: ${{ github.event.inputs.DEVICE_TREE_BRANCH || 'main' }}
   DEVICE_PATH: ${{ github.event.inputs.DEVICE_PATH || 'xiaomi/manet' }}
@@ -151,7 +158,7 @@ jobs:
       run: |
         mkdir -p /tmp/ci-logs
         exec > >(stdbuf -oL tee /tmp/ci-logs/sync.log) 2>&1
-        repo init -u $TWRP_MANIFEST_URL -b $TWRP_MANIFEST_BRANCH --depth=1
+        repo init -u $TWRP_MANIFEST_URL -b $TWRP_MANIFEST_BRANCH -m "$TWRP_MANIFEST_FILE" --depth=1
         (while true; do echo "Syncing source..."; sleep 60; done) &
         TIP_PID=$!
         synced=""
@@ -220,6 +227,17 @@ jobs:
         ensure_repo external/lvgl    https://github.com/TWRP-Test/android_external_lvgl    twrp-16.0
         ensure_repo external/libvpx  https://github.com/TWRP-Test/android_external_libvpx  twrp-16.0
         ensure_repo external/libwebm https://github.com/TWRP-Test/android_external_libwebm twrp-16.0
+
+        # vold：fd347403 “Sync decryption with android-16.0.0_r1” 在
+        # twrp-16.0-new-data-decryption 上；twrp-default.xml 已经把
+        # build/soong 换成 TWRP 的 fork，product_variables 才有定义。
+        if [ -d system/vold/.git ]; then
+          git -C system/vold fetch --depth=1 origin twrp-16.0-new-data-decryption
+          git -C system/vold checkout -q FETCH_HEAD
+          echo "vold: $(git -C system/vold rev-parse --short HEAD) $(git -C system/vold log --oneline -1)"
+        else
+          echo "system/vold 不在（manifest 没带），跳过"
+        fi
 
         # vold 的新解密提交（fd347403）在 TWRP-Test/android_system_vold 的
         # twrp-16.0-new-data-decryption 分支上，但它要用 TWRP 自己 fork 的
