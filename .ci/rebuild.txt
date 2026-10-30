@@ -1,4 +1,4 @@
 recovery-ref: recovery-diag
-recovery-sha: d8e14ebb
-reason: 只加启动日志，定位 8850 概率性崩溃停在哪一步
-requested-at: 2026-10-30T06:03:47Z
+recovery-sha: c7f84d38
+reason: 启动留痕 + 无命令时提前清 BCB（崩了也能进系统拿日志）
+requested-at: 2026-10-30T06:05:22Z
