@@ -18,6 +18,7 @@
 #include "backend/hardware_settings.h"
 #include "backend/screen_backend.h"
 #include "backend/twrp_decrypt_backend.h"
+#include "backend/boot_note.h"
 #include "components/apply_button.h"
 #include "components/check_row.h"
 #include "components/setting_card.h"
@@ -3896,6 +3897,7 @@ static void refresh_decrypt_progress(void) {
     page_state.decrypt_saved_from_otg = false;
     page_state.decrypt_saved_failures = 0;
     gui2_backend::clear_auto_attempt_marker();
+    boot_note("decrypt ok");
     navigate_to(page_kind::HOME, nullptr, page_transition::FADE);
   } else {
     if (page_state.decrypt_used_saved) {
@@ -3925,6 +3927,7 @@ static void refresh_decrypt_progress(void) {
       page_state.decrypt_saved_from_otg = false;
     }
     gui2_backend::clear_auto_attempt_marker();
+    boot_note("decrypt failed");
     page_state.decrypt_failed = true;
     navigate_to(page_kind::DECRYPT, nullptr, page_transition::REPLACE);
   }
@@ -5377,7 +5380,9 @@ static void show_decrypt_page(page_transition transition) {
   options.key_callback = keyboard_feedback_cb;
   options.language_callback = decrypt_language_event_cb;
   options.press_guard_callback = press_cancel_guard_cb;
+  boot_note("decrypt page: building");
   const auto view = gui2_pages::build_decrypt_page(options);
+  boot_note("decrypt page: built");
   page_state.decrypt_input = view.input;
   page_state.decrypt_keyboard = view.keyboard;
   page_state.decrypt_status = view.status;
@@ -5400,6 +5405,7 @@ static void show_decrypt_page(page_transition transition) {
       from_otg = !saved.empty();
     }
     if (!saved.empty()) {
+      boot_note("autodecrypt: saved len=%zu remember=%d", saved.size(), remember_on ? 1 : 0);
       if (gui2_backend::auto_attempt_crashed_last_boot()) {
         // 上一次启动就是在这条路上没的（哨兵文件没被清掉）。宁可不自动，
         // 也不能让设备反复重启在 recovery：密码留着，让用户手输一次。

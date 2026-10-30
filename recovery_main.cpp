@@ -59,6 +59,8 @@
 #include "recovery_ui/device.h"
 #include "recovery_ui/stub_ui.h"
 #include "recovery_ui/ui.h"
+
+#include "gui2/backend/boot_note.h"
 #include "recovery_utils/logging.h"
 #include "recovery_utils/roots.h"
 
@@ -345,6 +347,7 @@ int main(int argc, char** argv) {
   // We don't have logcat yet under recovery; so we'll print error on screen and log to stdout
   // (which is redirected to recovery.log) as we used to do.
   android::base::InitLogging(argv, &UiLogger);
+  boot_note("main start");
 
   // Take last pmsg contents and rewrite it to the current pmsg session.
   static constexpr const char filter[] = "recovery/";
@@ -367,8 +370,10 @@ int main(int argc, char** argv) {
 
   load_volume_table();
 
+  boot_note("before get_args");
   std::string stage;
   std::vector<std::string> args = get_args(argc, argv, &stage);
+  boot_note("after get_args: %zu arg(s), stage=%s", args.size(), stage.c_str());
   auto args_to_parse = StringVectorToNullTerminatedArray(args);
 
   static constexpr struct option OPTIONS[] = {
@@ -464,6 +469,7 @@ int main(int argc, char** argv) {
   BootState boot_state(reason, stage);  // recovery_main owns the state of boot.
   device->SetBootState(&boot_state);
   ui = device->GetUI();
+  boot_note("ui created");
 
   if (!HasCache()) {
     device->RemoveMenuItemForAction(Device::WIPE_CACHE);
