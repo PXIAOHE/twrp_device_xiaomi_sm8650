@@ -5404,6 +5404,20 @@ static void show_decrypt_page(page_transition transition) {
       // 失败时 refresh_decrypt_progress 才知道要轮询 weaver 重试，而不是直接弹
       // 「凭证不对」。start() 直接被拒（例如没有可选用户）才退回提示页。
       const uint64_t prompt_before = page_state.decrypt_prompt_ms;
+      // weaver 没起来时第一次尝试必然失败（TWRP 那边报
+      // "Failed to get weaver key size"，还要等它超时 ~1 秒），
+      // 白跑一次就是用户感觉到的「自动解密变慢」。先等 weaver，
+      // 就绪了再发第一次。
+      if (!weaver_service_running(nullptr)) {
+        auto* ctx = new saved_attempt_ctx();
+        ctx->password = saved;
+        if (lv_timer_create(saved_password_poll_cb, 150, ctx) != nullptr) {
+          fprintf(stdout, "I:gui2: saved-password held until weaver is up\n");
+          fflush(stdout);
+          return;
+        }
+        delete ctx;   // 建 timer 失败就照旧立即试
+      }
       decrypt_attempt(saved);
       if (page_state.decrypt_prompt_ms == prompt_before) {
         page_state.decrypt_used_saved = false;
