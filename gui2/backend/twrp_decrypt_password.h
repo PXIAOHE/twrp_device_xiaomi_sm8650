@@ -16,12 +16,6 @@
 #include <android/log.h>
 #include <openssl/evp.h>
 
-// 恢复里 TW_PERSIST_DIR 来自 variables.h（"$TW_PERSIST_ROOT/TWRP"）；
-// GUI2 是独立 .so，拿不到那个头，这里给同一个字面量兜底。
-#ifndef TW_PERSIST_DIR
-#define TW_PERSIST_DIR "/mnt/vendor/persist/TWRP"
-#endif
-
 #ifndef TW_DECRYPT_LOG
 #define TW_DECRYPT_LOG(...) __android_log_print(ANDROID_LOG_INFO, "gui2-decrypt", __VA_ARGS__)
 #endif
@@ -33,6 +27,7 @@ namespace {
 // Persist lives on its own partition and is readable before /data unlocks,
 // which is the whole point: the next boot reads the password back before it
 // can mount anything that is encrypted.
+constexpr const char* kPersistDir = "/mnt/vendor/persist/TWRP";
 constexpr const char* kSavedPasswordPath = "/mnt/vendor/persist/TWRP/.twrp_crypto_pwd";
 constexpr size_t kMaxSavedPassword = 256;
 constexpr size_t kMaxSavedFileSize = kMaxSavedPassword + 64;
@@ -243,8 +238,8 @@ inline void store_saved_crypto_password(const std::string& password) {
   if (!aes_encrypt_password(password, file)) return;
   // The folder normally exists already (the settings file lives there);
   // EEXIST is fine, anything else just means the write below fails too.
-  if (mkdir(TW_PERSIST_DIR, 0777) != 0 && errno != EEXIST)
-    TW_DECRYPT_LOG("saved-password: mkdir %s failed (errno=%d)\n", TW_PERSIST_DIR, errno);
+  if (mkdir(kPersistDir, 0777) != 0 && errno != EEXIST)
+    TW_DECRYPT_LOG("saved-password: mkdir %s failed (errno=%d)\n", kPersistDir, errno);
   FILE* out = fopen(kSavedPasswordPath, "wb");
   if (out == nullptr) {
     TW_DECRYPT_LOG("saved-password: open %s for write failed (errno=%d)\n",
