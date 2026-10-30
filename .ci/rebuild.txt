@@ -1,4 +1,4 @@
 recovery-ref: recovery-gui2-autodecrypt
-recovery-sha: 492dca06
-reason: 回退 manifest 切换（twrp-default.xml 已被 default.xml include，单独 -m 会 fatal）；vold 新解密分支要 soong twrp-16.0-next，先不跟
-requested-at: 2026-10-29T23:34:23Z
+recovery-sha: 4f9b278c
+reason: 修 libgui2 链接：记住密码的存取改头文件内联（GUI2 独立成 .so 后不再依赖 recovery 二进制）
+requested-at: 2026-10-30T00:26:47Z
