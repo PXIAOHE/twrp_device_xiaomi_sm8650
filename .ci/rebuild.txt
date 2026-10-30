@@ -1,4 +1,4 @@
 recovery-ref: recovery-gui2-autodecrypt
-recovery-sha: 4f9b278c
-reason: 修 libgui2 链接：记住密码的存取改头文件内联（GUI2 独立成 .so 后不再依赖 recovery 二进制）
-requested-at: 2026-10-30T00:26:47Z
+recovery-sha: e9facbb5
+reason: 修 -Wmacro-redefined（TW_PERSIST_DIR 撞车），改用 kPersistDir
+requested-at: 2026-10-30T01:42:36Z
