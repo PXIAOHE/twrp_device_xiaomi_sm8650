@@ -3830,6 +3830,7 @@ static void saved_password_poll_cb(lv_timer_t* timer) {
     fprintf(stdout, "I:gui2: saved-password fires after %u ms (weaver=%s)\n",
             ctx->waited_ms, ready ? "ready" : (absent ? "absent" : "timeout"));
     fflush(stdout);
+    gui2_backend::note_auto_attempt();
     decrypt_attempt(ctx->password);
     delete ctx;
     lv_timer_delete(timer);
@@ -3894,6 +3895,7 @@ static void refresh_decrypt_progress(void) {
     page_state.decrypt_used_saved = false;
     page_state.decrypt_saved_from_otg = false;
     page_state.decrypt_saved_failures = 0;
+    gui2_backend::clear_auto_attempt_marker();
     navigate_to(page_kind::HOME, nullptr, page_transition::FADE);
   } else {
     if (page_state.decrypt_used_saved) {
@@ -3922,6 +3924,7 @@ static void refresh_decrypt_progress(void) {
       page_state.decrypt_used_saved = false;
       page_state.decrypt_saved_from_otg = false;
     }
+    gui2_backend::clear_auto_attempt_marker();
     page_state.decrypt_failed = true;
     navigate_to(page_kind::DECRYPT, nullptr, page_transition::REPLACE);
   }
@@ -5397,6 +5400,14 @@ static void show_decrypt_page(page_transition transition) {
       from_otg = !saved.empty();
     }
     if (!saved.empty()) {
+      if (gui2_backend::auto_attempt_crashed_last_boot()) {
+        // 上一次启动就是在这条路上没的（哨兵文件没被清掉）。宁可不自动，
+        // 也不能让设备反复重启在 recovery：密码留着，让用户手输一次。
+        fprintf(stdout, "I:gui2: last boot died during the saved-password attempt; "
+                        "not doing it automatically now\n");
+        fflush(stdout);
+        return;
+      }
       page_state.decrypt_used_saved = true;
       page_state.decrypt_saved_from_otg = from_otg;
       page_state.decrypt_saved_failures = 0;
@@ -5418,6 +5429,7 @@ static void show_decrypt_page(page_transition transition) {
         }
         delete ctx;   // 建 timer 失败就照旧立即试
       }
+      gui2_backend::note_auto_attempt();
       decrypt_attempt(saved);
       if (page_state.decrypt_prompt_ms == prompt_before) {
         page_state.decrypt_used_saved = false;

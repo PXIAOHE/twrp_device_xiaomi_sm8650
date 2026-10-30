@@ -5,6 +5,7 @@
 #pragma once
 
 #include <sys/stat.h>
+#include <unistd.h>
 #include <sys/system_properties.h>
 
 #include <cstdint>
@@ -29,6 +30,9 @@ namespace {
 // can mount anything that is encrypted.
 constexpr const char* kPersistDir = "/mnt/vendor/persist/TWRP";
 constexpr const char* kSavedPasswordPath = "/mnt/vendor/persist/TWRP/.twrp_crypto_pwd";
+// 自动解密的崩溃哨兵：发起前写下，等到解密有结果就删。下次启动如果它还在，
+// 说明上一次就是在这一步没的——那就不再自动尝试，直接让用户手输。
+constexpr const char* kAutoAttemptMarker = "/mnt/vendor/persist/TWRP/.twrp_autodecrypt_try";
 constexpr size_t kMaxSavedPassword = 256;
 constexpr size_t kMaxSavedFileSize = kMaxSavedPassword + 64;
 // "TWG2" is the original AES format: the key depended on whether the serial
@@ -263,5 +267,24 @@ inline void clear_saved_crypto_password() { remove(kSavedPasswordPath); }
 // A user-made copy of the same file on a USB stick is an external key: the
 // device never writes it, and it is left in place when it stops working.
 
+
+/// 上一次启动是不是死在自动解密上。
+inline bool auto_attempt_crashed_last_boot() {
+  struct stat st {};
+  return stat(kAutoAttemptMarker, &st) == 0;
+}
+
+/// 记下「这次要自动解密了」，落盘并刷出去，崩溃也不会丢。
+inline void note_auto_attempt() {
+  FILE* f = fopen(kAutoAttemptMarker, "wb");
+  if (f == nullptr) return;
+  fputs("1", f);
+  fflush(f);
+  fsync(fileno(f));
+  fclose(f);
+}
+
+/// 解密有了结果（成功或正常失败）就清掉，说明这次没崩。
+inline void clear_auto_attempt_marker() { remove(kAutoAttemptMarker); }
 
 }  // namespace gui2_backend
