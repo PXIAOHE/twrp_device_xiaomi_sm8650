@@ -1,4 +1,4 @@
-recovery-ref: recovery-gui2-autodecrypt
-recovery-sha: 4215c1b4
-reason: 自动解密加崩溃哨兵（崩过就不再自动尝试，避免卡死在 recovery）+ 先等 weaver
-requested-at: 2026-10-30T04:32:16Z
+recovery-ref: recovery-diag
+recovery-sha: d8e14ebb
+reason: 只加启动日志，定位 8850 概率性崩溃停在哪一步
+requested-at: 2026-10-30T06:03:47Z

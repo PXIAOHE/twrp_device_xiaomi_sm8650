@@ -56,7 +56,7 @@ on:
         required: false
         default: "c6eedad856f8badd5b104e23331aded4474ed28e"
   push:
-    branches: [ main, 'device-*' ]
+    branches: [ main, 'device-*', 'ci/8850-diag' ]
     paths-ignore:
       - "**.md"
 
@@ -75,7 +75,7 @@ env:
   BUILD_PARTITION: ${{ github.event.inputs.BUILD_PARTITION || 'recovery' }}
   RECOVERY_SOURCE: ${{ github.event.inputs.RECOVERY_SOURCE || 'branch' }}
   RECOVERY_BRANCH_URL: ${{ github.event.inputs.RECOVERY_BRANCH_URL || 'https://github.com/PXIAOHE/twrp_device_xiaomi_sm8650' }}
-  RECOVERY_BRANCH_REF: ${{ github.event.inputs.RECOVERY_BRANCH_REF || 'recovery-gui2-autodecrypt' }}
+  RECOVERY_BRANCH_REF: ${{ github.event.inputs.RECOVERY_BRANCH_REF || 'recovery-diag' }}
   RECOVERY_FORK_REF: ${{ github.event.inputs.RECOVERY_FORK_REF || 'lvgl' }}
   RECOVERY_FORK_SHA: ${{ github.event.inputs.RECOVERY_FORK_SHA || 'c6eedad856f8badd5b104e23331aded4474ed28e' }}
 
