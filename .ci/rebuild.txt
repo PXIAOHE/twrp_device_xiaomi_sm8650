@@ -1,4 +1,4 @@
 recovery-ref: recovery-gui2-autodecrypt
-recovery-sha: 5b034c01
-reason: 自动解密先等 weaver，去掉第一次白跑的约 1 秒
-requested-at: 2026-10-30T03:47:40Z
+recovery-sha: 4215c1b4
+reason: 自动解密加崩溃哨兵（崩过就不再自动尝试，避免卡死在 recovery）+ 先等 weaver
+requested-at: 2026-10-30T04:32:07Z
