@@ -7,6 +7,7 @@
 #include <thread>
 
 #include "decrypt_backend.h"
+#include "twrp_decrypt_password.h"
 
 namespace gui2_backend {
 

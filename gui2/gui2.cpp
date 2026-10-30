@@ -3903,7 +3903,6 @@ static void refresh_decrypt_progress(void) {
       page_state.decrypt_saved_failures++;
       if (page_state.decrypt_saved_failures <= 6) {
         std::string retry_saved = gui2_backend::load_saved_crypto_password();
-        if (retry_saved.empty()) retry_saved = gui2_backend::load_otg_crypto_password();
         if (!retry_saved.empty()) {
           auto* ctx = new saved_attempt_ctx();
           ctx->password = retry_saved;
@@ -5395,7 +5394,6 @@ static void show_decrypt_page(page_transition transition) {
         ? gui2_backend::load_saved_crypto_password() : std::string();
     bool from_otg = false;
     if (saved.empty()) {
-      saved = gui2_backend::load_otg_crypto_password();
       from_otg = !saved.empty();
     }
     if (!saved.empty()) {
