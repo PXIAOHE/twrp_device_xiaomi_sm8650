@@ -1,4 +1,4 @@
 recovery-ref: recovery-gui2-autodecrypt
-recovery-sha: e9facbb5
-reason: 修 -Wmacro-redefined（TW_PERSIST_DIR 撞车），改用 kPersistDir
-requested-at: 2026-10-30T01:42:25Z
+recovery-sha: 5b034c01
+reason: 自动解密先等 weaver，去掉第一次白跑的约 1 秒
+requested-at: 2026-10-30T03:47:40Z
