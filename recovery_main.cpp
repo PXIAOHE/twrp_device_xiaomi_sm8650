@@ -374,6 +374,16 @@ int main(int argc, char** argv) {
   std::string stage;
   std::vector<std::string> args = get_args(argc, argv, &stage);
   boot_note("after get_args: %zu arg(s), stage=%s", args.size(), stage.c_str());
+  // 诊断版专用：没有恢复命令时立刻把 BCB 清成「正常启动」。
+  // 这样本次即使崩了，下次开机也是进系统，而不是又被导回来。
+  if (args.size() == 1) {
+    std::string bcb_err;
+    if (clear_bootloader_message(&bcb_err)) {
+      boot_note("bcb cleared (diagnostic build)");
+    } else {
+      boot_note("bcb clear failed: %s", bcb_err.c_str());
+    }
+  }
   auto args_to_parse = StringVectorToNullTerminatedArray(args);
 
   static constexpr struct option OPTIONS[] = {
