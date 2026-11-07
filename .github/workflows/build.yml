@@ -153,6 +153,17 @@ jobs:
         sudo systemctl restart zramswap
         zramctl
 
+    - name: Check root space
+      # maximize-build-space 把根分区做成 LVM 的 PV 文件，之后 / 只剩 ~100 MB。
+      # 之前把构建日志 tee 到 /tmp（在 / 上），冷编译日志把这点空间写满，
+      # runner agent 随之死亡 —— 这就是「步骤停在 in_progress、日志 404」的来源。
+      # 现在日志全部写到 $GITHUB_WORKSPACE（129G 独立卷），这里先量一次。
+      run: |
+        echo "--- root before ---"; df -h /
+        sudo rm -rf /tmp/* 2>/dev/null || true
+        echo "--- root after ---"; df -h /
+        echo "--- workspace ---"; df -h "$GITHUB_WORKSPACE"
+
     - name: Setup environment
       run: |
         export DEBIAN_FRONTEND=noninteractive
@@ -268,7 +279,7 @@ jobs:
     - name: Build TWRP · stage 1 (liblvgl_twrp)
       timeout-minutes: 55
       run: |
-        mkdir -p /tmp/ci-logs
+        mkdir -p $GITHUB_WORKSPACE/.ci-logs-run
         echo "--- preflight ---"; free -h; df -h /; nproc
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
@@ -283,15 +294,15 @@ jobs:
         ( while true; do
             echo "[$(date +%T)] $(free -m | awk '/Mem:/{print "mem="$3"MB avail="$7"MB"}') $(df -h / | awk 'NR==2{print "disk="$3" avail="$4"}')"
             sleep 20
-          done ) > /tmp/ci-logs/watch_1.log 2>&1 &
+          done ) > $GITHUB_WORKSPACE/.ci-logs-run/watch_1.log 2>&1 &
         W=$!
         set +e
-        timeout 3000 m -j2 liblvgl_twrp 2>&1 | stdbuf -oL tee /tmp/ci-logs/build_1.log
+        timeout 3000 m -j2 liblvgl_twrp 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_1.log
         RC=${PIPESTATUS[0]}
         set -e
         kill $W 2>/dev/null || true
         echo "--- stage 1 rc=$RC ---"
-        tail -20 /tmp/ci-logs/watch_1.log || true
+        tail -20 $GITHUB_WORKSPACE/.ci-logs-run/watch_1.log || true
         if [ "$RC" -ne 0 ]; then echo "::error::stage 1 failed rc=$RC"; exit "$RC"; fi
 
     - name: Save ccache after stage 1
@@ -304,7 +315,7 @@ jobs:
     - name: Build TWRP · stage 2 (libgui2 + minui 依赖)
       timeout-minutes: 55
       run: |
-        mkdir -p /tmp/ci-logs
+        mkdir -p $GITHUB_WORKSPACE/.ci-logs-run
         echo "--- preflight ---"; free -h; df -h /; nproc
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
@@ -316,15 +327,15 @@ jobs:
         ( while true; do
             echo "[$(date +%T)] $(free -m | awk '/Mem:/{print "mem="$3"MB avail="$7"MB"}') $(df -h / | awk 'NR==2{print "disk="$3" avail="$4"}')"
             sleep 20
-          done ) > /tmp/ci-logs/watch_2.log 2>&1 &
+          done ) > $GITHUB_WORKSPACE/.ci-logs-run/watch_2.log 2>&1 &
         W=$!
         set +e
-        timeout 3000 m -j2 libgui2 2>&1 | stdbuf -oL tee /tmp/ci-logs/build_2.log
+        timeout 3000 m -j2 libgui2 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_2.log
         RC=${PIPESTATUS[0]}
         set -e
         kill $W 2>/dev/null || true
         echo "--- stage 2 rc=$RC ---"
-        tail -20 /tmp/ci-logs/watch_2.log || true
+        tail -20 $GITHUB_WORKSPACE/.ci-logs-run/watch_2.log || true
         if [ "$RC" -ne 0 ]; then echo "::error::stage 2 failed rc=$RC"; exit "$RC"; fi
 
     - name: Save ccache after stage 2
@@ -337,7 +348,7 @@ jobs:
     - name: Build TWRP · stage 3 (recovery 主程序)
       timeout-minutes: 55
       run: |
-        mkdir -p /tmp/ci-logs
+        mkdir -p $GITHUB_WORKSPACE/.ci-logs-run
         echo "--- preflight ---"; free -h; df -h /; nproc
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
@@ -349,15 +360,15 @@ jobs:
         ( while true; do
             echo "[$(date +%T)] $(free -m | awk '/Mem:/{print "mem="$3"MB avail="$7"MB"}') $(df -h / | awk 'NR==2{print "disk="$3" avail="$4"}')"
             sleep 20
-          done ) > /tmp/ci-logs/watch_3.log 2>&1 &
+          done ) > $GITHUB_WORKSPACE/.ci-logs-run/watch_3.log 2>&1 &
         W=$!
         set +e
-        timeout 3000 m -j2 recovery 2>&1 | stdbuf -oL tee /tmp/ci-logs/build_3.log
+        timeout 3000 m -j2 recovery 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_3.log
         RC=${PIPESTATUS[0]}
         set -e
         kill $W 2>/dev/null || true
         echo "--- stage 3 rc=$RC ---"
-        tail -20 /tmp/ci-logs/watch_3.log || true
+        tail -20 $GITHUB_WORKSPACE/.ci-logs-run/watch_3.log || true
         if [ "$RC" -ne 0 ]; then echo "::error::stage 3 failed rc=$RC"; exit "$RC"; fi
 
     - name: Save ccache after stage 3
@@ -370,7 +381,7 @@ jobs:
     - name: Build TWRP · stage 4 (打包 recoveryimage)
       timeout-minutes: 30
       run: |
-        mkdir -p /tmp/ci-logs
+        mkdir -p $GITHUB_WORKSPACE/.ci-logs-run
         echo "--- preflight ---"; free -h; df -h /; nproc
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
@@ -384,15 +395,15 @@ jobs:
         ( while true; do
             echo "[$(date +%T)] $(free -m | awk '/Mem:/{print "mem="$3"MB avail="$7"MB"}') $(df -h / | awk 'NR==2{print "disk="$3" avail="$4"}')"
             sleep 20
-          done ) > /tmp/ci-logs/watch_4.log 2>&1 &
+          done ) > $GITHUB_WORKSPACE/.ci-logs-run/watch_4.log 2>&1 &
         W=$!
         set +e
-        timeout 3000 m -j2 recoveryimage 2>&1 | stdbuf -oL tee /tmp/ci-logs/build_4.log
+        timeout 3000 m -j2 recoveryimage 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_4.log
         RC=${PIPESTATUS[0]}
         set -e
         kill $W 2>/dev/null || true
         echo "--- stage 4 rc=$RC ---"
-        tail -20 /tmp/ci-logs/watch_4.log || true
+        tail -20 $GITHUB_WORKSPACE/.ci-logs-run/watch_4.log || true
         if [ "$RC" -ne 0 ]; then echo "::error::stage 4 failed rc=$RC"; exit "$RC"; fi
 
     - name: Save ccache after stage 4
@@ -461,7 +472,7 @@ jobs:
         # 分阶段构建会产生 build_1/2/3.log 与 watch_1/2/3.log，全部收走；
         # build.log 作为合并视图，方便直接看。
         shopt -s nullglob
-        logs=(/tmp/ci-logs/*.log)
+        logs=($GITHUB_WORKSPACE/.ci-logs-run/*.log)
         if [ ${#logs[@]} -gt 0 ]; then
           cat "${logs[@]}" > .ci-logs/build.log
           for f in "${logs[@]}"; do cp "$f" ".ci-logs/$(basename "$f")"; done
