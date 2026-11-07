@@ -84,6 +84,9 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # 上一次运行卡在编译步骤里被外部杀掉，日志都没留下。给个上限：
+    # 真卡住就带着日志正常失败，而不是静默消失。
+    timeout-minutes: 90
     permissions:
       contents: write
     steps:
@@ -123,6 +126,18 @@ jobs:
 
     - name: Maximize build space
       uses: easimon/maximize-build-space@master
+
+    - name: Setup swap
+      # 链接阶段峰值内存最高，runner 只有 16G。zram 那条路依赖
+      # linux-modules-extra，跑不起来就是零 swap，这里补一个确定可用的 swapfile。
+      run: |
+        sudo swapoff -a || true
+        sudo fallocate -l 8G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+        echo "--- swap now ---"; free -h
+        echo "--- disk ---"; df -h /
 
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
@@ -256,6 +271,7 @@ jobs:
     - name: Build TWRP
       run: |
         mkdir -p /tmp/ci-logs
+        echo "--- preflight ---"; free -h; df -h /; nproc
         exec > >(stdbuf -oL tee /tmp/ci-logs/build.log) 2>&1
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
