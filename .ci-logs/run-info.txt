@@ -1,0 +1,3 @@
+run_id: 42366000219
+run_url: https://github.com/PXIAOHE/twrp_device_xiaomi_sm8650/actions/runs/42366000219
+attempt: 1
