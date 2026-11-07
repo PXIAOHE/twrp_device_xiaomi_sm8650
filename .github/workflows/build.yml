@@ -127,18 +127,9 @@ jobs:
     - name: Maximize build space
       uses: easimon/maximize-build-space@master
 
-    - name: Setup swap
-      # 链接阶段峰值内存最高，runner 只有 16G。zram 那条路依赖
-      # linux-modules-extra，跑不起来就是零 swap，这里补一个确定可用的 swapfile。
-      run: |
-        sudo swapoff -a || true
-        sudo fallocate -l 8G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
-        sudo chmod 600 /swapfile
-        sudo mkswap /swapfile
-        sudo swapon /swapfile
-        echo "--- swap now ---"; free -h
-        echo "--- disk ---"; df -h /
-
+    # 不要再自己 fallocate 建 swap：easimon/maximize-build-space 已经把
+    # 根分区扩成 LVM 并占满，/swapfile 一定 No space left on device，
+    # 而且它自己已经 mkswap + swapon 了 buildvg-swap（日志里 See "Swap: 3.0Gi"）。
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
