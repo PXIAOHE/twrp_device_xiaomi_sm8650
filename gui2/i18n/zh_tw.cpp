@@ -672,6 +672,8 @@ extern const language_pack kTraditionalChinese = {
   "安裝 Zip 刷機包“%s”時出錯",
   "一個或多個刷機包請求清除 Cache -- 正在清除 Cache。",
 
+  "資料解密",
+  "記住解密密碼",
 };
 
 }  // namespace gui2_i18n

@@ -668,6 +668,8 @@ struct language_pack {
   const char* zip_compatible_err;
   const char* zip_err;
   const char* zip_wipe_cache;
+  const char* general_group_decrypt;
+  const char* general_remember_password;
 };
 
 // One key-to-field map shared by every language; translations live in language_pack.

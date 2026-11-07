@@ -1,10 +1,19 @@
 #include "twrp_decrypt_backend.h"
 
+#include <openssl/evp.h>
+
 #include <utility>
 
+#include <sys/stat.h>
+#include <sys/system_properties.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <cstdint>
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <vector>
 
 #include "data.hpp"
 #include "partitions.hpp"
@@ -115,6 +124,12 @@ void twrp_decrypt_backend::run(std::string password) {
       op_status = 1;
     else {
       DataManager::SetValue(TW_IS_ENCRYPTED, 0);
+      // Remember what unlocked the partition so the next boot can skip the
+      // prompt; the General Settings switch can veto this, and the
+      // default-password sentinel is not a real secret.
+      if (!password.empty() && password != "!" &&
+          DataManager::GetStrValue("tw_gui2_remember_pwd") != "0")
+        store_saved_crypto_password(password);
       DataManager::SetBackupFolder();
       PartitionManager.AddMtpStorage("/data");
 
@@ -155,4 +170,27 @@ void twrp_decrypt_backend::acknowledge() {
   if (state_ != decrypt_state::RUNNING) state_ = decrypt_state::IDLE;
 }
 
+std::string load_otg_crypto_password() {
+  std::vector<PartitionList> list;
+  PartitionManager.GetPartitionList("mount", &list);
+  for (const PartitionList& entry : list) {
+    const std::string& point = entry.mount_point;
+    if (point.rfind("/usbotg", 0) != 0 && point.rfind("/usb-otg", 0) != 0 &&
+        point.rfind("/usb_otg", 0) != 0)
+      continue;
+    if (!PartitionManager.IsMountedByPath(point)) {
+      if (!PartitionManager.MountByPath(point, false)) {
+        LOGINFO("saved-password: could not mount %s\n", point.c_str());
+        continue;
+      }
+    }
+    std::string password = load_password_file(point + "/TWRP/.twrp_crypto_pwd");
+    if (password.empty()) password = load_password_file(point + "/TWRP/twrp_crypto_pwd");
+    if (!password.empty()) {
+      LOGINFO("saved-password: using the copy on %s\n", point.c_str());
+      return password;
+    }
+  }
+  return std::string();
+}
 }  // namespace gui2_backend

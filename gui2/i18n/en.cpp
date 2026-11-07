@@ -674,6 +674,8 @@ extern const language_pack kEnglish = {
   "Error installing zip file '%s'",
   "One or more zip requested a cache wipe -- Wiping cache now.",
 
+  "Data decryption",
+  "Remember decrypt password",
 };
 
 }  // namespace gui2_i18n
