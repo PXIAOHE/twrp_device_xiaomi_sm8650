@@ -259,43 +259,96 @@ jobs:
         cat INFO.txt
       working-directory: device/${{ env.DEVICE_PATH }}
 
-    - name: Build TWRP
+    - name: Build TWRP · stage 1 (libgui2 + 依赖)
+      timeout-minutes: 60
       run: |
         mkdir -p /tmp/ci-logs
         echo "--- preflight ---"; free -h; df -h /; nproc
-        # 不用 `exec > >(tee)`：进程替换会让步骤的 stdout 被 tee 一直占着，
-        # 退出码也拿不到。改成显式管道 + PIPESTATUS。
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
         export CCACHE_DIR=.ccache
         export CCACHE_EXEC=$(command -v ccache)
-        export CCACHE_MAXSIZE=5G
+        export CCACHE_MAXSIZE=10G
         export USE_CCACHE=1
         lunch twrp_$LUNCH_TARGET
-        # GUI2 dev docs: a final recoveryimage must be preceded by installclean
+        # GUI2 dev docs: 最终 recoveryimage 之前必须 installclean 一次
         m installclean
 
-        # 资源看门狗：每 30s 记一行内存与磁盘，构建结束后打印尾巴。
-        # 上一次失败两次都卡在 Build TWRP 且没有日志，至少这次能看到趋势。
         ( while true; do
-            echo "[$(date +%T)] $(free -m | awk '/Mem:/{print "mem_used="$3"MB mem_avail="$7"MB"}') $(df -h / | awk 'NR==2{print "disk_used="$3" disk_avail="$4}')"
-            sleep 30
-          done ) > /tmp/ci-logs/watch.log 2>&1 &
-        WATCH_PID=$!
-
-        # 4 核 16G 上并发 4 个 clang，峰值内存太高；降到 2 并发换稳定。
+            echo "[$(date +%T)] $(free -m | awk '/Mem:/{print "mem_used="$3"MB avail="$7"MB"}') $(df -h / | awk 'NR==2{print "disk_used="$3" avail="$4"}')"
+            sleep 20
+          done ) > /tmp/ci-logs/watch_1.log 2>&1 &
+        W=$!
         set +e
-        timeout 4200 m -j2 ${BUILD_PARTITION}image 2>&1 | stdbuf -oL tee /tmp/ci-logs/build.log
+        timeout 3500 m -j2 libgui2 2>&1 | stdbuf -oL tee /tmp/ci-logs/build_1.log
         RC=${PIPESTATUS[0]}
         set -e
+        kill $W 2>/dev/null || true
+        echo "--- stage 1 rc=$RC ---"
+        tail -20 /tmp/ci-logs/watch_1.log || true
+        df -h /
+        if [ "$RC" -ne 0 ]; then echo "::error::stage 1 failed rc=$RC"; exit "$RC"; fi
 
-        kill $WATCH_PID 2>/dev/null || true
-        echo "--- build rc=$RC ---"
-        echo "--- watch.log (tail) ---"; tail -40 /tmp/ci-logs/watch.log || true
-        echo "--- disk after build ---"; df -h /
-        if [ "$RC" -ne 0 ]; then echo "::error::build failed rc=$RC"; exit "$RC"; fi
+    - name: Build TWRP · stage 2 (recovery 主程序)
+      timeout-minutes: 60
+      run: |
+        mkdir -p /tmp/ci-logs
+        echo "--- preflight ---"; free -h; df -h /; nproc
+        source build/envsetup.sh
+        export ALLOW_MISSING_DEPENDENCIES=true
+        export CCACHE_DIR=.ccache
+        export CCACHE_EXEC=$(command -v ccache)
+        export CCACHE_MAXSIZE=10G
+        export USE_CCACHE=1
+        lunch twrp_$LUNCH_TARGET
+        ( while true; do
+            echo "[$(date +%T)] $(free -m | awk '/Mem:/{print "mem_used="$3"MB avail="$7"MB"}') $(df -h / | awk 'NR==2{print "disk_used="$3" avail="$4"}')"
+            sleep 20
+          done ) > /tmp/ci-logs/watch_2.log 2>&1 &
+        W=$!
+        set +e
+        timeout 3500 m -j2 recovery 2>&1 | stdbuf -oL tee /tmp/ci-logs/build_2.log
+        RC=${PIPESTATUS[0]}
+        set -e
+        kill $W 2>/dev/null || true
+        echo "--- stage 2 rc=$RC ---"
+        tail -20 /tmp/ci-logs/watch_2.log || true
+        df -h /
+        if [ "$RC" -ne 0 ]; then echo "::error::stage 2 failed rc=$RC"; exit "$RC"; fi
 
+    - name: Build TWRP · stage 3 (打包 recoveryimage)
+      timeout-minutes: 40
+      run: |
+        mkdir -p /tmp/ci-logs
+        echo "--- preflight ---"; free -h; df -h /; nproc
+        source build/envsetup.sh
+        export ALLOW_MISSING_DEPENDENCIES=true
+        export CCACHE_DIR=.ccache
+        export CCACHE_EXEC=$(command -v ccache)
+        export CCACHE_MAXSIZE=10G
+        export USE_CCACHE=1
+        lunch twrp_$LUNCH_TARGET
+        echo "--- 现有产物 ---"; ls -la out/target/product/$DEVICE_NAME/ 2>/dev/null | head -20 || true
+
+        ( while true; do
+            echo "[$(date +%T)] $(free -m | awk '/Mem:/{print "mem_used="$3"MB avail="$7"MB"}') $(df -h / | awk 'NR==2{print "disk_used="$3" avail="$4"}')"
+            sleep 20
+          done ) > /tmp/ci-logs/watch_3.log 2>&1 &
+        W=$!
+        set +e
+        timeout 3500 m -j2 recoveryimage 2>&1 | stdbuf -oL tee /tmp/ci-logs/build_3.log
+        RC=${PIPESTATUS[0]}
+        set -e
+        kill $W 2>/dev/null || true
+        echo "--- stage 3 rc=$RC ---"
+        tail -20 /tmp/ci-logs/watch_3.log || true
+        df -h /
+        if [ "$RC" -ne 0 ]; then echo "::error::stage 3 failed rc=$RC"; exit "$RC"; fi
+
+    - name: Rename image
+      run: |
         mv out/target/product/$DEVICE_NAME/${BUILD_PARTITION}.img out/target/product/$DEVICE_NAME/TWRP-3.7.1-16-$DEVICE_NAME-$BUILD_DATE.img
+        ls -la out/target/product/$DEVICE_NAME/TWRP-*.img
 
     - name: Verify theme overlay
       run: |
@@ -348,8 +401,13 @@ jobs:
         git checkout --orphan ci-logs
         git reset
         mkdir -p .ci-logs
-        if [ -s /tmp/ci-logs/build.log ]; then
-          cp /tmp/ci-logs/build.log .ci-logs/build.log
+        # 分阶段构建会产生 build_1/2/3.log 与 watch_1/2/3.log，全部收走；
+        # build.log 作为合并视图，方便直接看。
+        shopt -s nullglob
+        logs=(/tmp/ci-logs/*.log)
+        if [ ${#logs[@]} -gt 0 ]; then
+          cat "${logs[@]}" > .ci-logs/build.log
+          for f in "${logs[@]}"; do cp "$f" ".ci-logs/$(basename "$f")"; done
         else
           echo "no build log captured" > .ci-logs/build.log
         fi
