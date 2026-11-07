@@ -1,4 +1,5 @@
 recovery-ref: recovery-gui2-autodecrypt
-recovery-sha: 4215c1b4
-reason: 自动解密加崩溃哨兵（崩过就不再自动尝试，避免卡死在 recovery）+ 先等 weaver
-requested-at: 2026-10-30T04:32:07Z
+recovery-sha: 96d81be6
+recovery-base: a93a12ec (TWRP-Test twrp-16.0, 含 PR #42)
+reason: 同步上游 8a58fc3b→a93a12ec，自动解密整块重放零冲突；只构建 manet 主分支
+requested-at: 2026-11-07T15:58:00Z

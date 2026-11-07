@@ -55,8 +55,10 @@ on:
         description: "fork commit pin (empty = track the ref head)"
         required: false
         default: "3b77055e3e7e872e847dfde8d06aba7d772b3016"
+  # 只构建 manet 主分支。device-* 分支保留在仓库里（历史与参考），但不再自动出包；
+  # 需要时手动 Run workflow，指定 DEVICE_TREE_BRANCH 即可。
   push:
-    branches: [ main, 'device-*' ]
+    branches: [ main ]
     paths-ignore:
       - "**.md"
 

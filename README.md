@@ -7,7 +7,9 @@ TWRP 16 device tree for the Redmi K70 Pro (`manet`), assembled from:
 
 ## Build (GitHub Actions)
 
-Builds run **automatically on every push to `main`** (docs-only changes are skipped).
+Builds run **automatically on every push to `main` only** (docs-only changes are skipped).
+`device-*` branches are kept in the repo for history/reference but no longer build on push —
+trigger the workflow manually and set `DEVICE_TREE_BRANCH` when you need one.
 Manual trigger: Actions → **TWRP 16 Builder** → *Run workflow*. Defaults are pre-set for this repo:
 
 | Input | Default |
@@ -36,5 +38,13 @@ Flash it to the `recovery` partition of the active slot.
   `vendor.display.enable_spr=1` in system.prop — twrpminui programs
   SDE_SPR_INIT_CFG from it; without it the panel scans out with B/R swapped
   (blue renders pink) while screenshots stay correct. Official image: tag
-  `2026-10-14-38625219337`. Multi-device: push to a `device-<codename>`
-  branch to build that device (see `device-zorn`).
+  `2026-10-14-38625219337`.
+- 2026-10-29 ~ 10-30: decryption path reworked on device — saved-password attempts wait for
+  weaver (`init.svc.*weaver*`, 150 ms poll, 15 s cap), failures retry silently before the UI
+  reports a bad credential, and a persist sentinel stops a boot loop when the attempt itself
+  crashes. Remember-password switch lives under General Settings (`tw_gui2_remember_pwd`).
+- 2026-11-07: upstream synced to `a93a12ec` (PR #42 OTG discovery + off-thread GUI2 mounts,
+  twrpminui drop of pixelflinger/FreeType resource APIs, graphics/input rebase on current
+  minui with inotify input and direct libdrm, fonts moved to a `gui2_fonts` prebuilt module).
+  The whole auto-decrypt layer replayed onto the new baseline with zero conflicts.
+  `device-*` branches stop auto-building; only `main` (manet) ships images now.
