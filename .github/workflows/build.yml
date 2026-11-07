@@ -86,7 +86,7 @@ jobs:
     runs-on: ubuntu-latest
     # 上一次运行卡在编译步骤里被外部杀掉，日志都没留下。给个上限：
     # 真卡住就带着日志正常失败，而不是静默消失。
-    timeout-minutes: 90
+    timeout-minutes: 120
     permissions:
       contents: write
     steps:
@@ -263,7 +263,8 @@ jobs:
       run: |
         mkdir -p /tmp/ci-logs
         echo "--- preflight ---"; free -h; df -h /; nproc
-        exec > >(stdbuf -oL tee /tmp/ci-logs/build.log) 2>&1
+        # 不用 `exec > >(tee)`：进程替换会让步骤的 stdout 被 tee 一直占着，
+        # 退出码也拿不到。改成显式管道 + PIPESTATUS。
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
         export CCACHE_DIR=.ccache
@@ -273,11 +274,28 @@ jobs:
         lunch twrp_$LUNCH_TARGET
         # GUI2 dev docs: a final recoveryimage must be preceded by installclean
         m installclean
-        (while true; do echo `date +%T` "Building TWRP..."; free -h; sleep 10; done) &
-        TIP_PID=$!
-        m ${BUILD_PARTITION}image
+
+        # 资源看门狗：每 30s 记一行内存与磁盘，构建结束后打印尾巴。
+        # 上一次失败两次都卡在 Build TWRP 且没有日志，至少这次能看到趋势。
+        ( while true; do
+            echo "[$(date +%T)] $(free -m | awk '/Mem:/{print "mem_used="$3"MB mem_avail="$7"MB"}') $(df -h / | awk 'NR==2{print "disk_used="$3" disk_avail="$4}')"
+            sleep 30
+          done ) > /tmp/ci-logs/watch.log 2>&1 &
+        WATCH_PID=$!
+
+        # 4 核 16G 上并发 4 个 clang，峰值内存太高；降到 2 并发换稳定。
+        set +e
+        timeout 4200 m -j2 ${BUILD_PARTITION}image 2>&1 | stdbuf -oL tee /tmp/ci-logs/build.log
+        RC=${PIPESTATUS[0]}
+        set -e
+
+        kill $WATCH_PID 2>/dev/null || true
+        echo "--- build rc=$RC ---"
+        echo "--- watch.log (tail) ---"; tail -40 /tmp/ci-logs/watch.log || true
+        echo "--- disk after build ---"; df -h /
+        if [ "$RC" -ne 0 ]; then echo "::error::build failed rc=$RC"; exit "$RC"; fi
+
         mv out/target/product/$DEVICE_NAME/${BUILD_PARTITION}.img out/target/product/$DEVICE_NAME/TWRP-3.7.1-16-$DEVICE_NAME-$BUILD_DATE.img
-        kill $TIP_PID && exit 0
 
     - name: Verify theme overlay
       run: |
