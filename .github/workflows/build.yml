@@ -142,6 +142,32 @@ jobs:
         restore-keys: |
           ccache-save-
 
+    - name: Setup zram
+      # maximize-build-space 自带约 4G 磁盘 swap；这步再给一份压缩 swap。
+      # 心跳快照显示分析阶段 Swap 总量 12G、已用 6G，zram 是最后那层缓冲，
+      # 所以不能删；模块缺失时失败也不该把整个构建带下去。
+      continue-on-error: true
+      run: |
+        sudo apt install linux-modules-extra-$(uname -r) zram-tools -y || sudo apt install zram-tools -y || true
+        sudo modprobe zram || true
+        sudo sed -i 's/^#PERCENT=50/PERCENT=90/' /etc/default/zramswap
+        sudo sed -i 's/^#PRIORITY=100/PRIORITY=1000/' /etc/default/zramswap
+        sudo systemctl restart zramswap
+        sudo swapon --show
+        free -h
+
+    - name: Setup extra swap
+      # 直接在 / 下建 swapfile 会 No space left（/ 只剩 100 MB），
+      # 这里把 swapfile 建在 129G 的 buildlv（$GITHUB_WORKSPACE）上。
+      run: |
+        SW="$GITHUB_WORKSPACE/swapfile"
+        sudo fallocate -l 16G "$SW"
+        sudo chmod 600 "$SW"
+        sudo mkswap "$SW"
+        sudo swapon "$SW"
+        sudo swapon --show
+        free -h
+
     - name: Check root space
       # maximize-build-space 把根分区做成 LVM 的 PV 文件，之后 / 只剩 ~100 MB。
       # 之前把构建日志 tee 到 /tmp（在 / 上），冷编译日志把这点空间写满，
@@ -296,6 +322,11 @@ jobs:
           "$GITHUB_WORKSPACE/.ci-logs-run/watch_1.log" &
         HB=$!
         set +e
+        # GOGC=50：Soong 是 Go 程序，默认堆目标 100%；实测分析阶段吃到
+        # 14G/16G 并消耗 6G swap，压到 50 换一点 CPU 时间。
+        export GOGC=50
+        sudo dmesg -w 2>/dev/null | grep -iE 'out of memory|oom-killer|Killed process' >> $GITHUB_WORKSPACE/.ci-logs-run/watch_1.log &
+        DMESG_PID=$!
         timeout 3000 m -j2 liblvgl_twrp 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_1.log
         RC=${PIPESTATUS[0]}
         set -e
@@ -335,6 +366,9 @@ jobs:
           "$GITHUB_WORKSPACE/.ci-logs-run/watch_2.log" &
         HB=$!
         set +e
+        export GOGC=50
+        sudo dmesg -w 2>/dev/null | grep -iE 'out of memory|oom-killer|Killed process' >> $GITHUB_WORKSPACE/.ci-logs-run/watch_2.log &
+        DMESG_PID=$!
         timeout 3000 m -j2 libgui2 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_2.log
         RC=${PIPESTATUS[0]}
         set -e
@@ -374,6 +408,9 @@ jobs:
           "$GITHUB_WORKSPACE/.ci-logs-run/watch_3.log" &
         HB=$!
         set +e
+        export GOGC=50
+        sudo dmesg -w 2>/dev/null | grep -iE 'out of memory|oom-killer|Killed process' >> $GITHUB_WORKSPACE/.ci-logs-run/watch_3.log &
+        DMESG_PID=$!
         timeout 3000 m -j2 recovery 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_3.log
         RC=${PIPESTATUS[0]}
         set -e
@@ -415,6 +452,9 @@ jobs:
           "$GITHUB_WORKSPACE/.ci-logs-run/watch_4.log" &
         HB=$!
         set +e
+        export GOGC=50
+        sudo dmesg -w 2>/dev/null | grep -iE 'out of memory|oom-killer|Killed process' >> $GITHUB_WORKSPACE/.ci-logs-run/watch_4.log &
+        DMESG_PID=$!
         timeout 3000 m -j2 recoveryimage 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_4.log
         RC=${PIPESTATUS[0]}
         set -e
