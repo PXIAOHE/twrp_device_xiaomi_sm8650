@@ -119,6 +119,7 @@ jobs:
           echo EOF
         } >> "$GITHUB_ENV"
         echo BUILD_DATE=`date +%F` >> "$GITHUB_ENV"
+        echo JOB_START=`date +%s` >> "$GITHUB_ENV"
         echo "REPO_NAME=$(basename $TWRP_MANIFEST_URL)" >> "$GITHUB_ENV"
 
     - name: Cleanup
@@ -296,11 +297,16 @@ jobs:
             sleep 20
           done ) > $GITHUB_WORKSPACE/.ci-logs-run/watch_1.log 2>&1 &
         W=$!
+        # 心跳：runner 被杀时不上传日志，靠这个每 3 分钟把日志尾推到 hb 分支
+        GH_TOKEN="${{ github.token }}" JOB_START="$JOB_START" \
+          bash "device/$DEVICE_PATH/ci/heartbeat.sh" \
+          "$GITHUB_WORKSPACE/.ci-logs-run/build_1.log" 180 &
+        HB=$!
         set +e
         timeout 3000 m -j2 liblvgl_twrp 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_1.log
         RC=${PIPESTATUS[0]}
         set -e
-        kill $W 2>/dev/null || true
+        kill $W $HB 2>/dev/null || true
         echo "--- stage 1 rc=$RC ---"
         tail -20 $GITHUB_WORKSPACE/.ci-logs-run/watch_1.log || true
         if [ "$RC" -ne 0 ]; then echo "::error::stage 1 failed rc=$RC"; exit "$RC"; fi
@@ -329,11 +335,16 @@ jobs:
             sleep 20
           done ) > $GITHUB_WORKSPACE/.ci-logs-run/watch_2.log 2>&1 &
         W=$!
+        # 心跳：runner 被杀时不上传日志，靠这个每 3 分钟把日志尾推到 hb 分支
+        GH_TOKEN="${{ github.token }}" JOB_START="$JOB_START" \
+          bash "device/$DEVICE_PATH/ci/heartbeat.sh" \
+          "$GITHUB_WORKSPACE/.ci-logs-run/build_2.log" 180 &
+        HB=$!
         set +e
         timeout 3000 m -j2 libgui2 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_2.log
         RC=${PIPESTATUS[0]}
         set -e
-        kill $W 2>/dev/null || true
+        kill $W $HB 2>/dev/null || true
         echo "--- stage 2 rc=$RC ---"
         tail -20 $GITHUB_WORKSPACE/.ci-logs-run/watch_2.log || true
         if [ "$RC" -ne 0 ]; then echo "::error::stage 2 failed rc=$RC"; exit "$RC"; fi
@@ -362,11 +373,16 @@ jobs:
             sleep 20
           done ) > $GITHUB_WORKSPACE/.ci-logs-run/watch_3.log 2>&1 &
         W=$!
+        # 心跳：runner 被杀时不上传日志，靠这个每 3 分钟把日志尾推到 hb 分支
+        GH_TOKEN="${{ github.token }}" JOB_START="$JOB_START" \
+          bash "device/$DEVICE_PATH/ci/heartbeat.sh" \
+          "$GITHUB_WORKSPACE/.ci-logs-run/build_3.log" 180 &
+        HB=$!
         set +e
         timeout 3000 m -j2 recovery 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_3.log
         RC=${PIPESTATUS[0]}
         set -e
-        kill $W 2>/dev/null || true
+        kill $W $HB 2>/dev/null || true
         echo "--- stage 3 rc=$RC ---"
         tail -20 $GITHUB_WORKSPACE/.ci-logs-run/watch_3.log || true
         if [ "$RC" -ne 0 ]; then echo "::error::stage 3 failed rc=$RC"; exit "$RC"; fi
@@ -397,11 +413,16 @@ jobs:
             sleep 20
           done ) > $GITHUB_WORKSPACE/.ci-logs-run/watch_4.log 2>&1 &
         W=$!
+        # 心跳：runner 被杀时不上传日志，靠这个每 3 分钟把日志尾推到 hb 分支
+        GH_TOKEN="${{ github.token }}" JOB_START="$JOB_START" \
+          bash "device/$DEVICE_PATH/ci/heartbeat.sh" \
+          "$GITHUB_WORKSPACE/.ci-logs-run/build_4.log" 180 &
+        HB=$!
         set +e
         timeout 3000 m -j2 recoveryimage 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_4.log
         RC=${PIPESTATUS[0]}
         set -e
-        kill $W 2>/dev/null || true
+        kill $W $HB 2>/dev/null || true
         echo "--- stage 4 rc=$RC ---"
         tail -20 $GITHUB_WORKSPACE/.ci-logs-run/watch_4.log || true
         if [ "$RC" -ne 0 ]; then echo "::error::stage 4 failed rc=$RC"; exit "$RC"; fi
