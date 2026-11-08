@@ -300,7 +300,7 @@ jobs:
         # 心跳：runner 被杀时不上传日志，靠这个每 3 分钟把日志尾推到 hb 分支
         GH_TOKEN="${{ github.token }}" JOB_START="$JOB_START" \
           bash "device/$DEVICE_PATH/ci/heartbeat.sh" \
-          "$GITHUB_WORKSPACE/.ci-logs-run/build_1.log" 180 &
+          "$GITHUB_WORKSPACE/.ci-logs-run/build_1.log" 120 &
         HB=$!
         set +e
         timeout 3000 m -j2 liblvgl_twrp 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_1.log
@@ -338,7 +338,7 @@ jobs:
         # 心跳：runner 被杀时不上传日志，靠这个每 3 分钟把日志尾推到 hb 分支
         GH_TOKEN="${{ github.token }}" JOB_START="$JOB_START" \
           bash "device/$DEVICE_PATH/ci/heartbeat.sh" \
-          "$GITHUB_WORKSPACE/.ci-logs-run/build_2.log" 180 &
+          "$GITHUB_WORKSPACE/.ci-logs-run/build_2.log" 120 &
         HB=$!
         set +e
         timeout 3000 m -j2 libgui2 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_2.log
@@ -376,7 +376,7 @@ jobs:
         # 心跳：runner 被杀时不上传日志，靠这个每 3 分钟把日志尾推到 hb 分支
         GH_TOKEN="${{ github.token }}" JOB_START="$JOB_START" \
           bash "device/$DEVICE_PATH/ci/heartbeat.sh" \
-          "$GITHUB_WORKSPACE/.ci-logs-run/build_3.log" 180 &
+          "$GITHUB_WORKSPACE/.ci-logs-run/build_3.log" 120 &
         HB=$!
         set +e
         timeout 3000 m -j2 recovery 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_3.log
@@ -416,7 +416,7 @@ jobs:
         # 心跳：runner 被杀时不上传日志，靠这个每 3 分钟把日志尾推到 hb 分支
         GH_TOKEN="${{ github.token }}" JOB_START="$JOB_START" \
           bash "device/$DEVICE_PATH/ci/heartbeat.sh" \
-          "$GITHUB_WORKSPACE/.ci-logs-run/build_4.log" 180 &
+          "$GITHUB_WORKSPACE/.ci-logs-run/build_4.log" 120 &
         HB=$!
         set +e
         timeout 3000 m -j2 recoveryimage 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_4.log
