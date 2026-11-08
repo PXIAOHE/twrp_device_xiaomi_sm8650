@@ -1,17 +1,17 @@
-== 2026-11-08T04:48:25Z ==
-job_elapsed_s: 1377
+== 2026-11-08T04:50:27Z ==
+job_elapsed_s: 1499
 build_log: /home/runner/work/twrp_device_xiaomi_sm8650/twrp_device_xiaomi_sm8650/.ci-logs-run/build_1.log
 build_size_bytes: 14486
 build_lines: 157
-watch_lines: 4
+watch_lines: 9
 --- mem ---
                total        used        free      shared  buff/cache   available
-Mem:           15983       10250         293          39        5815        5732
-Swap:          28471          81       28389
+Mem:           15983       14947         331           3        1140        1035
+Swap:          28471        4830       23641
 --- disk ---
 Filesystem                   Size  Used Avail Use% Mounted on
 /dev/root                    145G  143G  1.9G  99% /
-/dev/mapper/buildvg-buildlv  129G   92G   38G  72% /home/runner/work/twrp_device_xiaomi_sm8650/twrp_device_xiaomi_sm8650
+/dev/mapper/buildvg-buildlv  129G   92G   37G  72% /home/runner/work/twrp_device_xiaomi_sm8650/twrp_device_xiaomi_sm8650
 --- build tail 16000 bytes ---
 04:46:26 Build sandboxing disabled due to nsjail error.
 04:46:27 ************************************************************
@@ -175,3 +175,8 @@ Running globs...
 [watch 1 04:46:55Z] mem=1450MB used, 14532MB avail disk=1.9G
 [watch 1 04:47:25Z] mem=1393MB used, 14589MB avail disk=1.9G
 [watch 1 04:47:55Z] mem=6009MB used, 9973MB avail disk=1.9G
+[watch 1 04:48:25Z] mem=10250MB used, 5732MB avail disk=1.9G
+[watch 1 04:48:56Z] mem=14248MB used, 1734MB avail disk=1.9G
+[watch 1 04:49:26Z] mem=13887MB used, 2095MB avail disk=1.9G
+[watch 1 04:49:56Z] mem=14954MB used, 1028MB avail disk=1.9G
+[watch 1 04:50:26Z] mem=15014MB used, 968MB avail disk=1.9G
