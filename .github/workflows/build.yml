@@ -188,6 +188,7 @@ jobs:
         # 与 LVM swap 互相拖死时整机 freeze（日志与心跳同时静止）。
         sudo sysctl -w vm.swappiness=10
         sudo sysctl -w vm.vfs_cache_pressure=50
+        sudo sysctl -w vm.min_free_kbytes=65536
         git config --global user.name ${{ github.actor }}
         git config --global user.email ${{ github.actor }}@users.noreply.github.com
 
@@ -325,6 +326,10 @@ jobs:
         # GOGC=50：Soong 是 Go 程序，默认堆目标 100%；实测分析阶段吃到
         # 14G/16G 并消耗 6G swap，压到 50 换一点 CPU 时间。
         export GOGC=50
+        # 硬上限：soong_build 是 Go 程序，实测点开就在 30 秒里涨 12G，
+        # 把 16G 机器拖进 swap live-lock（有 swap、没有 OOM 记录、整机静止）。
+        # GOMEMLIMIT 让运行时在接近 6GiB 时强制 GC，宁可慢也不让它涨满。
+        export GOMEMLIMIT=6GiB
         sudo dmesg -w 2>/dev/null | grep -iE 'out of memory|oom-killer|Killed process' >> $GITHUB_WORKSPACE/.ci-logs-run/watch_1.log &
         DMESG_PID=$!
         timeout 3000 m -j2 liblvgl_twrp 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_1.log
@@ -367,6 +372,10 @@ jobs:
         HB=$!
         set +e
         export GOGC=50
+        # 硬上限：soong_build 是 Go 程序，实测点开就在 30 秒里涨 12G，
+        # 把 16G 机器拖进 swap live-lock（有 swap、没有 OOM 记录、整机静止）。
+        # GOMEMLIMIT 让运行时在接近 6GiB 时强制 GC，宁可慢也不让它涨满。
+        export GOMEMLIMIT=6GiB
         sudo dmesg -w 2>/dev/null | grep -iE 'out of memory|oom-killer|Killed process' >> $GITHUB_WORKSPACE/.ci-logs-run/watch_2.log &
         DMESG_PID=$!
         timeout 3000 m -j2 libgui2 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_2.log
@@ -409,6 +418,10 @@ jobs:
         HB=$!
         set +e
         export GOGC=50
+        # 硬上限：soong_build 是 Go 程序，实测点开就在 30 秒里涨 12G，
+        # 把 16G 机器拖进 swap live-lock（有 swap、没有 OOM 记录、整机静止）。
+        # GOMEMLIMIT 让运行时在接近 6GiB 时强制 GC，宁可慢也不让它涨满。
+        export GOMEMLIMIT=6GiB
         sudo dmesg -w 2>/dev/null | grep -iE 'out of memory|oom-killer|Killed process' >> $GITHUB_WORKSPACE/.ci-logs-run/watch_3.log &
         DMESG_PID=$!
         timeout 3000 m -j2 recovery 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_3.log
@@ -453,6 +466,10 @@ jobs:
         HB=$!
         set +e
         export GOGC=50
+        # 硬上限：soong_build 是 Go 程序，实测点开就在 30 秒里涨 12G，
+        # 把 16G 机器拖进 swap live-lock（有 swap、没有 OOM 记录、整机静止）。
+        # GOMEMLIMIT 让运行时在接近 6GiB 时强制 GC，宁可慢也不让它涨满。
+        export GOMEMLIMIT=6GiB
         sudo dmesg -w 2>/dev/null | grep -iE 'out of memory|oom-killer|Killed process' >> $GITHUB_WORKSPACE/.ci-logs-run/watch_4.log &
         DMESG_PID=$!
         timeout 3000 m -j2 recoveryimage 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_4.log
