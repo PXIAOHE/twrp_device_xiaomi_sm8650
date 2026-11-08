@@ -9,6 +9,7 @@
 #include <sys/system_properties.h>
 
 #include <cstdint>
+#include <ctime>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -270,8 +271,15 @@ inline void clear_saved_crypto_password() { remove(kSavedPasswordPath); }
 
 /// 上一次启动是不是死在自动解密上。
 inline bool auto_attempt_crashed_last_boot() {
-  struct stat st {};
-  return stat(kAutoAttemptMarker, &st) == 0;
+  // 哨兵已废弃：它原本用来挡住「开机就崩」的死循环，实际代价是
+  // 任何一次在解密过程中被中断的启动（手动重启、断电）都会让下一次
+  // 自动解密静默跳过，表现为「功能失效」。用户明确要求去掉。
+  // 这里只做一次清理，把旧版本留下的文件删掉，然后永远返回 false。
+  if (access(kAutoAttemptMarker, F_OK) == 0) {
+    TW_DECRYPT_LOG("saved-password: dropping legacy attempt marker\n");
+    remove(kAutoAttemptMarker);
+  }
+  return false;
 }
 
 /// 记下「这次要自动解密了」，落盘并刷出去，崩溃也不会丢。

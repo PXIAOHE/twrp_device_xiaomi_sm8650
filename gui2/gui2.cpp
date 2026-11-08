@@ -3803,6 +3803,7 @@ static void decrypt_attempt(const std::string& password) {
 struct saved_attempt_ctx {
   std::string password;
   uint32_t waited_ms = 0;
+  uint32_t min_wait_ms = 0;   // 重试时要先等一会儿，别把 gatekeeper 的失败计数打满
   bool saw_weaver_service = false;
 };
 
@@ -3825,12 +3826,15 @@ static void saved_password_poll_cb(lv_timer_t* timer) {
     lv_timer_delete(timer);
     return;
   }
-  ctx->waited_ms += 150;
+  ctx->waited_ms += 250;
+  if (ctx->waited_ms < ctx->min_wait_ms) return;
   bool saw_any = ctx->saw_weaver_service;
   const bool ready = weaver_service_running(&saw_any);
   ctx->saw_weaver_service = saw_any;
-  const bool absent = !saw_any && ctx->waited_ms >= 1000;
-  if (ready || absent || ctx->waited_ms >= 15000) {
+  // absent 提到 3 秒：weaver 起来得慢时不至于立刻放弃；
+  // timeout 提到 20 秒，给 TEE 上电留足时间。
+  const bool absent = !saw_any && ctx->waited_ms >= 3000;
+  if (ready || absent || ctx->waited_ms >= 20000) {
     fprintf(stdout, "I:gui2: saved-password fires after %u ms (weaver=%s)\n",
             ctx->waited_ms, ready ? "ready" : (absent ? "absent" : "timeout"));
     fflush(stdout);
@@ -3925,21 +3929,43 @@ static void refresh_decrypt_progress(void) {
     gui2_backend::clear_auto_attempt_marker();
     navigate_to(page_kind::HOME, nullptr, page_transition::FADE);
   } else {
+    // 兜底：首轮失败（常见是 TWRP 自己拿默认空密码试了一次，或者 kind() 在
+    // weaver 未就绪时被判成 DEFAULT，没走上面的自动分支）时，只要手里有保存的
+    // 密码且还没用过，就用它再试一次。
+    if (!page_state.decrypt_used_saved && !page_state.decrypt_failed) {
+      const bool remember_on =
+          settings == nullptr || settings->get_int(kRememberPasswordKey, 1) != 0;
+      std::string saved_fb = remember_on
+          ? gui2_backend::load_saved_crypto_password() : std::string();
+      if (!saved_fb.empty() && !gui2_backend::auto_attempt_crashed_last_boot()) {
+        page_state.decrypt_used_saved = true;
+        page_state.decrypt_saved_from_otg = false;
+        page_state.decrypt_saved_failures = 0;
+        fprintf(stdout, "I:gui2: first attempt failed; falling back to saved password\n");
+        fflush(stdout);
+        gui2_backend::note_auto_attempt();
+        decrypt_attempt(saved_fb);
+        return;
+      }
+    }
     if (page_state.decrypt_used_saved) {
       // 第一次尝试经常撞上 TEE/weaver 还没就绪（日志里是
       // "Failed to get weaver key size"），紧接着的第二次就成功。
       // 所以在报「凭证不对」之前，先用同一份保存的密码静默重试。
       page_state.decrypt_saved_failures++;
-      if (page_state.decrypt_saved_failures <= 6) {
+      if (page_state.decrypt_saved_failures <= 2) {
         std::string retry_saved = gui2_backend::load_saved_crypto_password();
         if (!retry_saved.empty()) {
           auto* ctx = new saved_attempt_ctx();
           ctx->password = retry_saved;
-          lv_timer_t* poll = lv_timer_create(saved_password_poll_cb, 150, ctx);
+          // 每次重试先静默等 2.5 秒：连续秒级重试会把 gatekeeper 的
+          // 失败计数打满并触发冷却，之后连正确密码也会被判错。
+          ctx->min_wait_ms = 3000;
+          lv_timer_t* poll = lv_timer_create(saved_password_poll_cb, 250, ctx);
           if (poll != nullptr) {
             fprintf(stdout,
-                    "I:gui2: saved-password attempt %d failed; polling weaver every 150 ms\n",
-                    (int)page_state.decrypt_saved_failures);
+                    "I:gui2: saved-password attempt %d failed; retrying after %u ms\n",
+                    (int)page_state.decrypt_saved_failures, 3000);
             fflush(stdout);
             return;   // 停在进度页，weaver 一起来就再试，不弹「凭证不对」
           }
@@ -5446,6 +5472,14 @@ static void show_decrypt_page(page_transition transition) {
   // 保存密码的尝试放在「页面构建完成之后」——与 10-17 manet 那版一致：
   // 那时 weaver/keymaster 已经上电，第一次就能解，不需要任何等待。
   // Startup（enter_startup_pause）与手动按钮都会走到这里，是唯一的公共入口。
+  // 诊断：把进入自动解密前的判定条件全部打出来，定位为什么有时不进这块。
+  fprintf(stdout, "I:gui2: decrypt gate null=%d enc=%d kind=%d failed=%d used_saved=%d\n",
+          decrypt == nullptr ? 1 : 0,
+          decrypt == nullptr ? -1 : static_cast<int>(decrypt->is_encrypted()),
+          decrypt == nullptr ? -1 : static_cast<int>(decrypt->kind()),
+          static_cast<int>(page_state.decrypt_failed),
+          static_cast<int>(page_state.decrypt_used_saved));
+  fflush(stdout);
   if (decrypt != nullptr && decrypt->is_encrypted() &&
       decrypt->kind() != gui2_backend::lock_kind::DEFAULT &&
       !page_state.decrypt_failed && !page_state.decrypt_used_saved) {
@@ -5476,11 +5510,16 @@ static void show_decrypt_page(page_transition transition) {
       // "Failed to get weaver key size"，还要等它超时 ~1 秒），
       // 白跑一次就是用户感觉到的「自动解密变慢」。先等 weaver，
       // 就绪了再发第一次。
-      if (!weaver_service_running(nullptr)) {
+      // 不管属性怎么说都先等 3 秒再发第一次。
+      // 实测 init.svc.*weaver 已经是 running，但 TEE 里的 key 还没 ready，
+      // 立刻发会稳定失败（vold 报 Failed to get weaver key size），而 5 秒后
+      // 手动输入同样的密码就能成功。属性不可靠，用固定延迟换成功率。
+      {
         auto* ctx = new saved_attempt_ctx();
         ctx->password = saved;
-        if (lv_timer_create(saved_password_poll_cb, 150, ctx) != nullptr) {
-          fprintf(stdout, "I:gui2: saved-password held until weaver is up\n");
+        ctx->min_wait_ms = 800;
+        if (lv_timer_create(saved_password_poll_cb, 250, ctx) != nullptr) {
+          fprintf(stdout, "I:gui2: saved-password delayed 800 ms before first try\n");
           fflush(stdout);
           return;
         }
