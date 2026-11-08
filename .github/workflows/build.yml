@@ -142,18 +142,6 @@ jobs:
         restore-keys: |
           ccache-save-
 
-    - name: Setup zram
-      # zram 只是给编译多挤一点内存；runner 内核一换，对应的
-      # linux-modules-extra 常常还没进源，这一步不该把整个构建带下去。
-      continue-on-error: true
-      run: |
-        sudo apt install linux-modules-extra-$(uname -r) zram-tools -y || sudo apt install zram-tools -y || true
-        sudo modprobe zram || true
-        sudo sed -i 's/^#PERCENT=50/PERCENT=90/' /etc/default/zramswap
-        sudo sed -i 's/^#PRIORITY=100/PRIORITY=1000/' /etc/default/zramswap
-        sudo systemctl restart zramswap
-        zramctl
-
     - name: Check root space
       # maximize-build-space 把根分区做成 LVM 的 PV 文件，之后 / 只剩 ~100 MB。
       # 之前把构建日志 tee 到 /tmp（在 / 上），冷编译日志把这点空间写满，
@@ -170,6 +158,10 @@ jobs:
         export DEBIAN_FRONTEND=noninteractive
         sudo apt update && sudo apt upgrade -y
         sudo apt install repo -y
+        # zram 步骤已删：PERCENT=90 的压缩 swap 吃 RAM 和 CPU，
+        # 与 LVM swap 互相拖死时整机 freeze（日志与心跳同时静止）。
+        sudo sysctl -w vm.swappiness=10
+        sudo sysctl -w vm.vfs_cache_pressure=50
         git config --global user.name ${{ github.actor }}
         git config --global user.email ${{ github.actor }}@users.noreply.github.com
 
@@ -293,14 +285,15 @@ jobs:
         m installclean
 
         ( while true; do
-            echo "[$(date +%T)] $(free -m | awk '/Mem:/{print "mem="$3"MB avail="$7"MB"}') $(df -h / | awk 'NR==2{print "disk="$3" avail="$4"}')"
-            sleep 20
+            echo "[watch 1 $(date -u +%H:%M:%SZ)] mem=$(free -m | awk '/Mem:/{print $3"MB used, "$7"MB avail"}') disk=$(df -h / | awk 'NR==2{print $4}')"
+            sleep 30
           done ) > $GITHUB_WORKSPACE/.ci-logs-run/watch_1.log 2>&1 &
         W=$!
         # 心跳：runner 被杀时不上传日志，靠这个每 3 分钟把日志尾推到 hb 分支
         GH_TOKEN="${{ github.token }}" JOB_START="$JOB_START" \
           bash "device/$DEVICE_PATH/ci/heartbeat.sh" \
-          "$GITHUB_WORKSPACE/.ci-logs-run/build_1.log" 120 &
+          "$GITHUB_WORKSPACE/.ci-logs-run/build_1.log" 120 \
+          "$GITHUB_WORKSPACE/.ci-logs-run/watch_1.log" &
         HB=$!
         set +e
         timeout 3000 m -j2 liblvgl_twrp 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_1.log
@@ -331,14 +324,15 @@ jobs:
         export USE_CCACHE=1
         lunch twrp_$LUNCH_TARGET
         ( while true; do
-            echo "[$(date +%T)] $(free -m | awk '/Mem:/{print "mem="$3"MB avail="$7"MB"}') $(df -h / | awk 'NR==2{print "disk="$3" avail="$4"}')"
-            sleep 20
+            echo "[watch 2 $(date -u +%H:%M:%SZ)] mem=$(free -m | awk '/Mem:/{print $3"MB used, "$7"MB avail"}') disk=$(df -h / | awk 'NR==2{print $4}')"
+            sleep 30
           done ) > $GITHUB_WORKSPACE/.ci-logs-run/watch_2.log 2>&1 &
         W=$!
         # 心跳：runner 被杀时不上传日志，靠这个每 3 分钟把日志尾推到 hb 分支
         GH_TOKEN="${{ github.token }}" JOB_START="$JOB_START" \
           bash "device/$DEVICE_PATH/ci/heartbeat.sh" \
-          "$GITHUB_WORKSPACE/.ci-logs-run/build_2.log" 120 &
+          "$GITHUB_WORKSPACE/.ci-logs-run/build_2.log" 120 \
+          "$GITHUB_WORKSPACE/.ci-logs-run/watch_2.log" &
         HB=$!
         set +e
         timeout 3000 m -j2 libgui2 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_2.log
@@ -369,14 +363,15 @@ jobs:
         export USE_CCACHE=1
         lunch twrp_$LUNCH_TARGET
         ( while true; do
-            echo "[$(date +%T)] $(free -m | awk '/Mem:/{print "mem="$3"MB avail="$7"MB"}') $(df -h / | awk 'NR==2{print "disk="$3" avail="$4"}')"
-            sleep 20
+            echo "[watch 3 $(date -u +%H:%M:%SZ)] mem=$(free -m | awk '/Mem:/{print $3"MB used, "$7"MB avail"}') disk=$(df -h / | awk 'NR==2{print $4}')"
+            sleep 30
           done ) > $GITHUB_WORKSPACE/.ci-logs-run/watch_3.log 2>&1 &
         W=$!
         # 心跳：runner 被杀时不上传日志，靠这个每 3 分钟把日志尾推到 hb 分支
         GH_TOKEN="${{ github.token }}" JOB_START="$JOB_START" \
           bash "device/$DEVICE_PATH/ci/heartbeat.sh" \
-          "$GITHUB_WORKSPACE/.ci-logs-run/build_3.log" 120 &
+          "$GITHUB_WORKSPACE/.ci-logs-run/build_3.log" 120 \
+          "$GITHUB_WORKSPACE/.ci-logs-run/watch_3.log" &
         HB=$!
         set +e
         timeout 3000 m -j2 recovery 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_3.log
@@ -409,14 +404,15 @@ jobs:
         ls -la out/target/product/$DEVICE_NAME/ 2>/dev/null | head -20 || true
 
         ( while true; do
-            echo "[$(date +%T)] $(free -m | awk '/Mem:/{print "mem="$3"MB avail="$7"MB"}') $(df -h / | awk 'NR==2{print "disk="$3" avail="$4"}')"
-            sleep 20
+            echo "[watch 4 $(date -u +%H:%M:%SZ)] mem=$(free -m | awk '/Mem:/{print $3"MB used, "$7"MB avail"}') disk=$(df -h / | awk 'NR==2{print $4}')"
+            sleep 30
           done ) > $GITHUB_WORKSPACE/.ci-logs-run/watch_4.log 2>&1 &
         W=$!
         # 心跳：runner 被杀时不上传日志，靠这个每 3 分钟把日志尾推到 hb 分支
         GH_TOKEN="${{ github.token }}" JOB_START="$JOB_START" \
           bash "device/$DEVICE_PATH/ci/heartbeat.sh" \
-          "$GITHUB_WORKSPACE/.ci-logs-run/build_4.log" 120 &
+          "$GITHUB_WORKSPACE/.ci-logs-run/build_4.log" 120 \
+          "$GITHUB_WORKSPACE/.ci-logs-run/watch_4.log" &
         HB=$!
         set +e
         timeout 3000 m -j2 recoveryimage 2>&1 | stdbuf -oL tee $GITHUB_WORKSPACE/.ci-logs-run/build_4.log
